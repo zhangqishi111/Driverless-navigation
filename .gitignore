@@ -1,34 +1,31 @@
 # Prerequisites
 *.d
 
-# Compiled Object files
+# Compiled object files
 *.slo
 *.lo
 *.o
 *.obj
 
-# Precompiled Headers
+# Precompiled headers
 *.gch
 *.pch
 
-# Linker files
+# Linker and debugger files
 *.ilk
-
-# Debugger Files
 *.pdb
 
-# Compiled Dynamic libraries
+# Compiled dynamic libraries
 *.so
 *.dylib
 *.dll
 *.so.*
 
-
 # Fortran module files
 *.mod
 *.smod
 
-# Compiled Static libraries
+# Compiled static libraries
 *.lai
 *.la
 *.a
@@ -39,10 +36,12 @@
 *.out
 *.app
 
-# Build directories
+# ROS 2 / colcon build directories
 build/
 Build/
 build-*/
+install/
+log/
 
 # CMake generated files
 CMakeFiles/
@@ -52,18 +51,30 @@ Makefile
 install_manifest.txt
 compile_commands.json
 
-# Temporary files
+# Python generated files
+__pycache__/
+*.py[cod]
+
+# ROS bag data
+*.bag
+*.db3
+*.mcap
+
+# Editor and temporary files
+.vscode/
+.idea/
 *.tmp
 *.log
 *.bak
 *.swp
+.DS_Store
 
 # vcpkg
 vcpkg_installed/
 
-# debug information files
+# Debug information files
 *.dwo
 
-# test output & cache
+# Test output and cache
 Testing/
 .cache/

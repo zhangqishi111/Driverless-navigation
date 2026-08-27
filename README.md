@@ -4,9 +4,9 @@
 
 当前开发基线：
 
-- Ubuntu 24.04 LTS
-- ROS 2 Jazzy
-- Gazebo Harmonic
+- Ubuntu 22.04 LTS
+- ROS 2 Humble
+- Gazebo Fortress
 - SLAM Toolbox
 - Nav2 / AMCL
 - robot_localization
@@ -36,11 +36,42 @@ Driverless-navigation/
 
 ```bash
 cd ~/Driverless-navigation
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/humble/setup.bash
 rosdep install --from-paths src --ignore-src -r -y
 colcon build --symlink-install
 source install/setup.bash
 ```
+
+## A组员：底盘仿真接口验证
+
+完成编译并加载工作空间后，一条命令启动测试场景、小车、激光雷达、
+ROS-Gazebo桥接和里程计TF：
+
+```bash
+ros2 launch landerpi_base_driver base_sim.launch.py
+```
+
+另开一个终端，加载环境并发送低速前进命令：
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/Driverless-navigation/install/setup.bash
+ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist \
+  "{linear: {x: 0.15}, angular: {z: 0.0}}"
+```
+
+确认标准接口和TF存在：
+
+```bash
+ros2 topic hz /scan
+ros2 topic echo /odom --once
+ros2 run tf2_ros tf2_echo odom base_link
+ros2 run tf2_ros tf2_echo base_link laser_link
+```
+
+预期结果：Gazebo中的小车向前运动，`/scan`约为10 Hz，`/odom`持续更新，
+并且两段TF都能查询到。当前模型是无实物阶段使用的替代模型；拿到LanderPi后，
+需按实测尺寸、轮距、轮径和厂商驱动接口更新，标准Topic与TF名称保持不变。
 
 ## 统一接口
 

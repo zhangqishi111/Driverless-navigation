@@ -3,9 +3,16 @@ project(landerpi_test)
 
 find_package(ament_cmake REQUIRED)
 
-install(DIRECTORY config launch scripts
+install(DIRECTORY
+  config
+  launch
+  docs
   DESTINATION share/${PROJECT_NAME}
 )
 
-ament_package()
+install(PROGRAMS
+  scripts/launch_sim_all.sh
+  DESTINATION lib/${PROJECT_NAME}
+)
 
+ament_package()

@@ -13,9 +13,13 @@ echo "=========================================="
 
 if ! command -v ros2 >/dev/null 2>&1; then
     if [ -f /opt/ros/jazzy/setup.bash ]; then
+        set +u
         source /opt/ros/jazzy/setup.bash
+        set -u
     elif [ -f /opt/ros/humble/setup.bash ]; then
+        set +u
         source /opt/ros/humble/setup.bash
+        set -u
         echo "[WARN] 当前使用 ROS 2 Humble"
         echo "[WARN] 项目正式基线为 ROS 2 Jazzy"
     else
@@ -31,7 +35,9 @@ echo "[PASS] ROS 2 environment: ${ROS_DISTRO:-unknown}"
 # --------------------------------------------------
 
 if [ -f "./install/setup.bash" ]; then
+    set +u
     source ./install/setup.bash
+    set -u
 fi
 
 if ! ros2 pkg prefix landerpi_bringup >/dev/null 2>&1; then
@@ -46,6 +52,10 @@ echo "[PASS] landerpi_bringup package found"
 
 # --------------------------------------------------
 # 3. 仅执行接口检查
+
+PASS_COUNT=0
+FAIL_COUNT=0
+WAIT_COUNT=0
 # --------------------------------------------------
 
 check_topic()
@@ -54,9 +64,11 @@ check_topic()
 
     if ros2 topic list | grep -Fxq "$topic"; then
         echo "[PASS] Topic $topic"
+        PASS_COUNT=$((PASS_COUNT + 1))
         return 0
     else
         echo "[FAIL] Topic $topic"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
         return 1
     fi
 }
@@ -72,9 +84,11 @@ check_tf()
 
     if grep -q "Translation:" "$temp_file"; then
         echo "[PASS] TF $parent -> $child"
+        PASS_COUNT=$((PASS_COUNT + 1))
         return 0
     else
         echo "[FAIL] TF $parent -> $child"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
         return 1
     fi
 }
@@ -98,17 +112,32 @@ run_checks()
     do
         if ros2 topic list | grep -Fxq "$topic"; then
             echo "[PASS] Topic $topic"
+            PASS_COUNT=$((PASS_COUNT + 1))
         else
             echo "[WAIT] Topic $topic"
+            WAIT_COUNT=$((WAIT_COUNT + 1))
         fi
     done
 
+    echo
+    echo "Summary:"
+    echo "  PASS: $PASS_COUNT"
+    echo "  FAIL: $FAIL_COUNT"
+    echo "  WAIT: $WAIT_COUNT"
     echo "====================================="
+
+    if [ "$FAIL_COUNT" -gt 0 ]; then
+        echo "[RESULT] FAIL"
+        return 1
+    else
+        echo "[RESULT] PASS"
+        return 0
+    fi
 }
 
 if [ "${1:-}" = "--check-only" ]; then
     run_checks
-    exit 0
+    exit $?
 fi
 
 # --------------------------------------------------

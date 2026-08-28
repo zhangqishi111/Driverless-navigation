@@ -19,25 +19,29 @@ landerpi_test/
 - `scripts/launch_sim_all.sh`：仿真启动与接口验收脚本
 - `docs/acceptance_checklist.md`：阶段验收清单与问题记录
 
-## 2. 编译
+## 2. 正式环境基线
+
+当前团队正式环境统一为：
+
+```text
+Ubuntu 22.04
+ROS 2 Humble
+Gazebo Fortress
+```
+
+E 的验收脚本以 ROS 2 Humble 作为正式基线。若检测到其他 ROS 2 发行版，脚本会给出警告；非 Humble 环境仅可用于临时预检查，不作为正式验收依据。
+
+## 3. 编译
 
 在工作空间根目录执行：
 
 ```bash
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/humble/setup.bash
 colcon build --symlink-install --packages-up-to landerpi_test
 source install/setup.bash
 ```
 
-如果当前仅使用 ROS 2 Humble 进行本地预检查，可将第一行替换为：
-
-```bash
-source /opt/ros/humble/setup.bash
-```
-
-正式项目环境以团队最终统一基线为准。
-
-## 3. 只执行接口检查
+## 4. 只执行接口检查
 
 ```bash
 ros2 run landerpi_test launch_sim_all.sh --check-only
@@ -63,7 +67,7 @@ ros2 run landerpi_test launch_sim_all.sh --check-only
 - `/local_plan`
 - `/actual_path`
 
-## 4. 检查结果说明
+## 5. 检查结果说明
 
 脚本统一使用三种状态：
 
@@ -90,7 +94,7 @@ echo $?
 - `0`：核心检查通过
 - `1`：至少一个核心检查失败
 
-## 5. 启动完整仿真
+## 6. 启动完整仿真
 
 当团队统一仿真入口 `landerpi_bringup/simulation.launch.py` 可用后，可执行：
 
@@ -102,7 +106,7 @@ ros2 run landerpi_test launch_sim_all.sh
 
 当前如果 `simulation.launch.py` 尚未合入，则完整启动模式暂时无法完成最终验收；此时可继续使用 `--check-only` 进行接口预检查。
 
-## 6. 验收文档
+## 7. 验收文档
 
 阶段验收清单位于：
 
@@ -125,11 +129,12 @@ src/landerpi_test/docs/acceptance_checklist.md
 - 负责人
 - 修复后的复测结果
 
-## 7. 测试原则
+## 8. 测试原则
 
-1. 使用项目统一 Topic、Frame、Node 和 Launch 名称。
-2. 不为测试另建与正式接口重复的 Topic 或 Frame。
-3. 核心 TF 以 `map -> odom -> base_link -> laser_link` 为准。
-4. 每个失败项都应可复现。
-5. 修复后必须重新测试。
-6. 正式验收以真实 Topic、TF、日志和实验数据为依据。
+1. 正式验收环境以 Ubuntu 22.04 + ROS 2 Humble + Gazebo Fortress 为准。
+2. 使用项目统一 Topic、Frame、Node 和 Launch 名称。
+3. 不为测试另建与正式接口重复的 Topic 或 Frame。
+4. 核心 TF 以 `map -> odom -> base_link -> laser_link` 为准。
+5. 每个失败项都应可复现。
+6. 修复后必须重新测试。
+7. 正式验收以真实 Topic、TF、日志和实验数据为依据。

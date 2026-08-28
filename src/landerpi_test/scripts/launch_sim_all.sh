@@ -12,23 +12,26 @@ echo "=========================================="
 # --------------------------------------------------
 
 if ! command -v ros2 >/dev/null 2>&1; then
-    if [ -f /opt/ros/jazzy/setup.bash ]; then
-        set +u
-        source /opt/ros/jazzy/setup.bash
-        set -u
-    elif [ -f /opt/ros/humble/setup.bash ]; then
+    if [ -f /opt/ros/humble/setup.bash ]; then
         set +u
         source /opt/ros/humble/setup.bash
         set -u
-        echo "[WARN] 当前使用 ROS 2 Humble"
-        echo "[WARN] 项目正式基线为 ROS 2 Jazzy"
+    elif [ -f /opt/ros/jazzy/setup.bash ]; then
+        set +u
+        source /opt/ros/jazzy/setup.bash
+        set -u
     else
         echo "[FAIL] 未找到 ROS 2 环境"
         exit 1
     fi
 fi
 
-echo "[PASS] ROS 2 environment: ${ROS_DISTRO:-unknown}"
+if [ "${ROS_DISTRO:-unknown}" = "humble" ]; then
+    echo "[PASS] ROS 2 environment: humble"
+else
+    echo "[WARN] 当前 ROS 2 environment: ${ROS_DISTRO:-unknown}"
+    echo "[WARN] 团队正式基线为 ROS 2 Humble"
+fi
 
 # --------------------------------------------------
 # 2. 工作空间环境检查
@@ -52,11 +55,11 @@ echo "[PASS] landerpi_bringup package found"
 
 # --------------------------------------------------
 # 3. 仅执行接口检查
+# --------------------------------------------------
 
 PASS_COUNT=0
 FAIL_COUNT=0
 WAIT_COUNT=0
-# --------------------------------------------------
 
 check_topic()
 {

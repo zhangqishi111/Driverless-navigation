@@ -54,9 +54,9 @@ map
 
 | 编号 | 检查项目 | 验收条件 | 状态 | 备注 |
 |---|---|---|---|---|
-| W1-ENV-01 | 操作系统 | Ubuntu 24.04 | TODO | |
-| W1-ENV-02 | ROS 2 | Jazzy | TODO | |
-| W1-ENV-03 | 仿真平台 | Gazebo Harmonic 可启动 | TODO | |
+| W1-ENV-01 | 操作系统 | Ubuntu 22.04 | TODO | |
+| W1-ENV-02 | ROS 2 | Humble | TODO | |
+| W1-ENV-03 | 仿真平台 | Gazebo Fortress 可启动 | TODO | |
 | W1-ENV-04 | 工作空间 | `colcon build` 成功 | TODO | |
 
 ## 3.2 基础接口检查

@@ -219,7 +219,7 @@ E 主要任务：
 
 `BLOCKED` 表示当前测试无法执行，原因是前置模块、统一 Launch 或相关接口尚未交付，并不等同于被测功能已经失败。
 
-例如：`simulation.launch.py` 尚未提供时，完整一键仿真验收应记录为 `BLOCKED`。
+例如：`base_sim.launch.py` 尚未合入时，完整一键仿真验收应记录为 `BLOCKED`。
 
 # 9. 测试原则
 

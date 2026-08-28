@@ -10,6 +10,7 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <exec_depend>landerpi_bringup</exec_depend>
+  <exec_depend>landerpi_base_driver</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>rosbag2</exec_depend>
 

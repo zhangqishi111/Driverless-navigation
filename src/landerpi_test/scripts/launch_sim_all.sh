@@ -16,12 +16,8 @@ if ! command -v ros2 >/dev/null 2>&1; then
         set +u
         source /opt/ros/humble/setup.bash
         set -u
-    elif [ -f /opt/ros/jazzy/setup.bash ]; then
-        set +u
-        source /opt/ros/jazzy/setup.bash
-        set -u
     else
-        echo "[FAIL] 未找到 ROS 2 环境"
+        echo "[FAIL] 未找到 ROS 2 Humble 环境"
         exit 1
     fi
 fi
@@ -29,8 +25,9 @@ fi
 if [ "${ROS_DISTRO:-unknown}" = "humble" ]; then
     echo "[PASS] ROS 2 environment: humble"
 else
-    echo "[WARN] 当前 ROS 2 environment: ${ROS_DISTRO:-unknown}"
-    echo "[WARN] 团队正式基线为 ROS 2 Humble"
+    echo "[FAIL] 当前 ROS 2 environment: ${ROS_DISTRO:-unknown}"
+    echo "[FAIL] 团队正式基线为 ROS 2 Humble"
+    exit 1
 fi
 
 # --------------------------------------------------
@@ -43,15 +40,15 @@ if [ -f "./install/setup.bash" ]; then
     set -u
 fi
 
-if ! ros2 pkg prefix landerpi_bringup >/dev/null 2>&1; then
-    echo "[FAIL] 未找到 landerpi_bringup"
+if ! ros2 pkg prefix landerpi_base_driver >/dev/null 2>&1; then
+    echo "[FAIL] 未找到 landerpi_base_driver"
     echo "请先执行："
     echo "  colcon build --symlink-install"
     echo "  source install/setup.bash"
     exit 1
 fi
 
-echo "[PASS] landerpi_bringup package found"
+echo "[PASS] landerpi_base_driver package found"
 
 # --------------------------------------------------
 # 3. 仅执行接口检查
@@ -146,12 +143,12 @@ fi
 # --------------------------------------------------
 # 4. 启动团队统一仿真入口
 
-BRINGUP_PREFIX="$(ros2 pkg prefix landerpi_bringup)"
-SIM_LAUNCH="${BRINGUP_PREFIX}/share/landerpi_bringup/launch/simulation.launch.py"
+BASE_DRIVER_PREFIX="$(ros2 pkg prefix landerpi_base_driver)"
+SIM_LAUNCH="${BASE_DRIVER_PREFIX}/share/landerpi_base_driver/launch/base_sim.launch.py"
 
 if [ ! -f "$SIM_LAUNCH" ]; then
     echo
-    echo "[BLOCKED] simulation.launch.py not found"
+    echo "[BLOCKED] base_sim.launch.py not found"
     echo "[INFO] Expected: $SIM_LAUNCH"
     echo "[INFO] Full simulation acceptance cannot run yet."
     echo "[INFO] You can still use: --check-only"
@@ -160,9 +157,9 @@ fi
 # --------------------------------------------------
 
 echo
-echo "[INFO] Starting simulation.launch.py ..."
+echo "[INFO] Starting base_sim.launch.py ..."
 
-ros2 launch landerpi_bringup simulation.launch.py &
+ros2 launch landerpi_base_driver base_sim.launch.py &
 SIM_PID=$!
 
 cleanup()

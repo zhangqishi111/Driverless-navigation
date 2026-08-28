@@ -29,7 +29,7 @@ ROS 2 Humble
 Gazebo Fortress
 ```
 
-E 的验收脚本以 ROS 2 Humble 作为正式基线。若检测到其他 ROS 2 发行版，脚本会给出警告；非 Humble 环境仅可用于临时预检查，不作为正式验收依据。
+E的验收脚本只接受ROS 2 Humble；检测到其他ROS 2发行版时会停止，避免混用环境产生不可复现的结果。
 
 ## 3. 编译
 
@@ -93,11 +93,11 @@ echo $?
 
 - `0`：核心检查通过
 - `1`：至少一个核心检查失败
-- `2`：完整验收被前置依赖阻塞，例如 `simulation.launch.py` 尚未提供
+- `2`：完整验收被前置依赖阻塞，例如 `base_sim.launch.py` 尚未合入
 
 ## 6. 启动完整仿真
 
-当团队统一仿真入口 `landerpi_bringup/simulation.launch.py` 可用后，可执行：
+当A的仿真入口 `landerpi_base_driver/base_sim.launch.py` 可用后，可执行：
 
 ```bash
 ros2 run landerpi_test launch_sim_all.sh
@@ -105,7 +105,7 @@ ros2 run landerpi_test launch_sim_all.sh
 
 脚本会调用团队统一仿真入口，等待初始化后再执行接口检查。
 
-当前如果 `simulation.launch.py` 尚未合入，则完整启动模式暂时无法完成最终验收；此时可继续使用 `--check-only` 进行接口预检查。
+当前如果 `base_sim.launch.py` 尚未合入，则完整启动模式暂时无法完成最终验收；此时可继续使用 `--check-only` 进行接口预检查。
 
 ## 7. 验收文档
 

@@ -145,6 +145,18 @@ fi
 
 # --------------------------------------------------
 # 4. 启动团队统一仿真入口
+
+BRINGUP_PREFIX="$(ros2 pkg prefix landerpi_bringup)"
+SIM_LAUNCH="${BRINGUP_PREFIX}/share/landerpi_bringup/launch/simulation.launch.py"
+
+if [ ! -f "$SIM_LAUNCH" ]; then
+    echo
+    echo "[BLOCKED] simulation.launch.py not found"
+    echo "[INFO] Expected: $SIM_LAUNCH"
+    echo "[INFO] Full simulation acceptance cannot run yet."
+    echo "[INFO] You can still use: --check-only"
+    exit 2
+fi
 # --------------------------------------------------
 
 echo

@@ -16,6 +16,10 @@ setup(
     maintainer_email='team@example.com',
     description='Sandbox map and robot-state display.',
     license='Apache-2.0',
-    entry_points={'console_scripts': []},
+    entry_points={
+        'console_scripts': [
+            'sandbox_display_node = landerpi_sandbox_display.sandbox_display_node:main',
+        ],
+    },
 )
 

@@ -4,9 +4,9 @@
 
 当前开发基线：
 
-- Ubuntu 24.04 LTS
-- ROS 2 Jazzy
-- Gazebo Harmonic
+- Ubuntu 22.04 LTS
+- ROS 2 Humble
+- Gazebo Fortress
 - SLAM Toolbox
 - Nav2 / AMCL
 - robot_localization
@@ -36,7 +36,7 @@ Driverless-navigation/
 
 ```bash
 cd ~/Driverless-navigation
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/humble/setup.bash
 rosdep install --from-paths src --ignore-src -r -y
 colcon build --symlink-install
 source install/setup.bash

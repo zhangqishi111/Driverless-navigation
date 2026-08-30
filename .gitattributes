@@ -1,0 +1,2 @@
+# ROS 2 executable Python nodes must retain Unix shebang line endings in WSL.
+*.py text eol=lf

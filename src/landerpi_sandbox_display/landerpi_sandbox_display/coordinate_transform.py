@@ -43,6 +43,89 @@ class CoordinateTransform:
 
         return x, y
 
+    def world_to_widget(
+            self,
+            x,
+            y,
+            widget_width,
+            widget_height,
+    ):
+        if (
+                self.map_width <= 0
+                or self.map_height <= 0
+                or self.resolution <= 0
+                or widget_width <= 0
+                or widget_height <= 0
+        ):
+            return None
+
+        viewport = self.widget_viewport(
+            widget_width,
+            widget_height,
+        )
+
+        if viewport is None:
+            return None
+
+        offset_x, offset_y, displayed_width, displayed_height = viewport
+
+        scale = displayed_width / self.map_width
+
+        map_x = (x - self.origin_x) / self.resolution
+
+        map_y = (y - self.origin_y) / self.resolution
+        map_y = self.map_height - 1 - map_y
+
+        widget_x = offset_x + map_x * scale
+        widget_y = offset_y + map_y * scale
+
+        return widget_x, widget_y
+
+    def widget_to_world(
+            self,
+            widget_x,
+            widget_y,
+            widget_width,
+            widget_height,
+    ):
+        if (
+                self.map_width <= 0
+                or self.map_height <= 0
+                or self.resolution <= 0
+                or widget_width <= 0
+                or widget_height <= 0
+        ):
+            return None
+
+        viewport = self.widget_viewport(
+            widget_width,
+            widget_height,
+        )
+
+        if viewport is None:
+            return None
+
+        offset_x, offset_y, displayed_width, displayed_height = viewport
+
+        scale = displayed_width / self.map_width
+        if (
+                widget_x < offset_x
+                or widget_x >= offset_x + displayed_width
+                or widget_y < offset_y
+                or widget_y >= offset_y + displayed_height
+        ):
+            return None
+
+        map_x = (widget_x - offset_x) / scale
+        map_y = (widget_y - offset_y) / scale
+
+        map_y = self.map_height - 1 - map_y
+
+        world_x = map_x * self.resolution + self.origin_x
+        world_y = map_y * self.resolution + self.origin_y
+
+        return world_x, world_y
+
     def label_to_map_pixel(
         self,
         label_x,
@@ -84,3 +167,39 @@ class CoordinateTransform:
         map_py = (label_y - offset_y) / scale
 
         return map_px, map_py
+
+    def widget_viewport(
+            self,
+            widget_width,
+            widget_height,
+    ):
+        if (
+                self.map_width <= 0
+                or self.map_height <= 0
+                or widget_width <= 0
+                or widget_height <= 0
+        ):
+            return None
+
+        scale = min(
+            widget_width / self.map_width,
+            widget_height / self.map_height,
+        )
+
+        displayed_width = self.map_width * scale
+        displayed_height = self.map_height * scale
+
+        offset_x = (
+                           widget_width - displayed_width
+                   ) / 2.0
+
+        offset_y = (
+                           widget_height - displayed_height
+                   ) / 2.0
+
+        return (
+            offset_x,
+            offset_y,
+            displayed_width,
+            displayed_height,
+        )

@@ -1,43 +1,22 @@
 import math
 import sys
-from landerpi_sandbox_display.coordinate_transform import CoordinateTransform
-
 
 import rclpy
+from geometry_msgs.msg import PoseStamped
+from nav_msgs.msg import OccupancyGrid, Path
+from PyQt5.QtCore import QTimer
+from PyQt5.QtGui import QColor, QImage
+from PyQt5.QtWidgets import QApplication, QMainWindow
 from rclpy.node import Node
 from rclpy.qos import (
-    QoSProfile,
-    ReliabilityPolicy,
     DurabilityPolicy,
     HistoryPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
 )
 
-from nav_msgs.msg import OccupancyGrid, Path
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel
-from PyQt5.QtCore import QTimer, Qt, QPointF, pyqtSignal
-from PyQt5.QtGui import (
-    QImage,
-    QPixmap,
-    QColor,
-    QPainter,
-    QPen,
-    QBrush,
-    QPolygonF,
-)
-from PyQt5.QtGui import QImage, QPixmap, QColor, QPainter, QPen, QBrush
-from geometry_msgs.msg import PoseStamped
-
-class MapLabel(QLabel):
-    clicked = pyqtSignal(float, float)
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            self.clicked.emit(
-                float(event.x()),
-                float(event.y())
-            )
-
-        super().mousePressEvent(event)
+from landerpi_sandbox_display.coordinate_transform import CoordinateTransform
+from landerpi_sandbox_display.map_widget import MapWidget
 
 class SandboxDisplayNode(Node):
     def __init__(
@@ -47,6 +26,8 @@ class SandboxDisplayNode(Node):
             plan_update_callback=None,
             local_plan_update_callback=None,
             actual_path_update_callback=None,
+
+
     ):
         super().__init__('sandbox_display_node')
 
@@ -55,6 +36,23 @@ class SandboxDisplayNode(Node):
         self.plan_update_callback = plan_update_callback
         self.local_plan_update_callback = local_plan_update_callback
         self.actual_path_update_callback = actual_path_update_callback
+
+        # 实际轨迹发布器
+        self.actual_path_publisher = self.create_publisher(
+            Path,
+            '/actual_path',
+            10,
+        )
+
+        # 保存实际轨迹
+        self.actual_path = Path()
+        self.actual_path.header.frame_id = 'map'
+
+        self.last_actual_x = None
+        self.last_actual_y = None
+
+        # 机器人移动超过 3cm 才记录一个轨迹点
+        self.actual_path_min_distance = 0.03
 
         map_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
@@ -141,8 +139,49 @@ class SandboxDisplayNode(Node):
             )
             return
 
+        # 更新界面中的机器人
         if self.robot_pose_update_callback is not None:
             self.robot_pose_update_callback(msg)
+
+        # 记录实际轨迹
+        self.update_actual_path(msg)
+
+    def update_actual_path(self, msg):
+        x = msg.pose.position.x
+        y = msg.pose.position.y
+
+        should_record = False
+
+        if self.last_actual_x is None:
+            should_record = True
+        else:
+            dx = x - self.last_actual_x
+            dy = y - self.last_actual_y
+
+            distance = math.hypot(dx, dy)
+
+            if distance >= self.actual_path_min_distance:
+                should_record = True
+
+        if not should_record:
+            return
+
+        pose = PoseStamped()
+        pose.header = msg.header
+        pose.pose = msg.pose
+
+        self.actual_path.header.stamp = (
+            self.get_clock().now().to_msg()
+        )
+
+        self.actual_path.poses.append(pose)
+
+        self.actual_path_publisher.publish(
+            self.actual_path
+        )
+
+        self.last_actual_x = x
+        self.last_actual_y = y
 
     def plan_callback(self, msg):
         if msg.header.frame_id != 'map':
@@ -208,16 +247,30 @@ class SandboxWindow(QMainWindow):
         self.setWindowTitle('LanderPi Sandbox Display')
         self.resize(900, 600)
 
-        self.map_label = MapLabel('Waiting for /map...')
-        self.map_label.setAlignment(Qt.AlignCenter)
-        self.map_label.clicked.connect(
+        self.goal_publish_callback = None
+
+        # 坐标转换器必须先创建
+        self.coordinate_transform = CoordinateTransform()
+
+        # 新的高清地图控件
+        self.map_widget = MapWidget(
+            coordinate_transform=self.coordinate_transform,
+        )
+
+        self.map_widget.setMinimumSize(
+            600,
+            500,
+        )
+
+        # 保留地图点击 → Goal 的功能
+        self.map_widget.clicked.connect(
             self.handle_map_click
         )
 
-        self.goal_publish_callback = None
-        self.coordinate_transform = CoordinateTransform()
-
-        self.setCentralWidget(self.map_label)
+        # MapWidget 正式成为主窗口中央控件
+        self.setCentralWidget(
+            self.map_widget
+        )
 
         self.map_image = None
 
@@ -238,8 +291,6 @@ class SandboxWindow(QMainWindow):
         self.goal_x = None
         self.goal_y = None
 
-
-
     def update_map(self, msg):
         width = msg.info.width
         height = msg.info.height
@@ -249,6 +300,7 @@ class SandboxWindow(QMainWindow):
         self.map_resolution = msg.info.resolution
         self.map_origin_x = msg.info.origin.position.x
         self.map_origin_y = msg.info.origin.position.y
+
         self.coordinate_transform.update_map_info(
             width=width,
             height=height,
@@ -257,12 +309,10 @@ class SandboxWindow(QMainWindow):
             origin_y=msg.info.origin.position.y,
         )
 
-
-
         image = QImage(
             width,
             height,
-            QImage.Format_Grayscale8
+            QImage.Format_Grayscale8,
         )
 
         for y in range(height):
@@ -270,206 +320,37 @@ class SandboxWindow(QMainWindow):
                 value = msg.data[y * width + x]
 
                 if value < 0:
-                    # ROS OccupancyGrid: -1 = 未知区域
                     gray = 128
                 elif value >= 50:
-                    # 障碍物
                     gray = 0
                 else:
-                    # 可通行区域
                     gray = 255
 
                 image.setPixelColor(
                     x,
                     y,
-                    QColor(gray, gray, gray)
+                    QColor(gray, gray, gray),
                 )
 
-        # ROS地图原点在左下，而Qt图像原点在左上
-        image = image.mirrored(False, True)
+        # ROS 地图原点左下，Qt 图像原点左上
+        image = image.mirrored(
+            False,
+            True,
+        )
 
         self.map_image = image
 
-        self.refresh_map()
-
-    def refresh_map(self):
-        if self.map_image is None:
-            return
-
-        display_image = self.map_image.convertToFormat(
-            QImage.Format_RGB32
+        # 交给新的高清 MapWidget
+        self.map_widget.set_map_image(
+            image
         )
 
-        painter = QPainter(display_image)
 
-        painter.setRenderHint(
-            QPainter.Antialiasing,
-            True
-        )
-
-        # -------------------------
-        # 1. 绘制三条路径
-        # -------------------------
-
-        # 全局规划：蓝色
-        self.draw_path(
-            painter,
-            self.global_plan_points,
-            QColor(0, 80, 255),
-            1,
-        )
-
-        # 局部规划：绿色
-        self.draw_path(
-            painter,
-            self.local_plan_points,
-            QColor(0, 180, 0),
-            1,
-        )
-
-        # 实际轨迹：红色
-        self.draw_path(
-            painter,
-            self.actual_path_points,
-            QColor(220, 0, 0),
-            1,
-        )
-
-        # -------------------------
-        # 2. 绘制目标点 /goal_pose
-        # -------------------------
-        if self.goal_x is not None and self.goal_y is not None:
-            pixel = self.coordinate_transform.world_to_pixel(
-                self.goal_x,
-                self.goal_y
-            )
-
-            if pixel is not None:
-                px, py = pixel
-
-                if (
-                        0 <= px < self.map_width
-                        and 0 <= py < self.map_height
-                ):
-                    goal_color = QColor(255, 165, 0)
-
-                    painter.setPen(
-                        QPen(goal_color, 2)
-                    )
-                    painter.setBrush(
-                        QBrush(Qt.NoBrush)
-                    )
-
-                    radius = 2
-
-                    # 圆圈
-                    painter.drawEllipse(
-                        QPointF(px, py),
-                        radius,
-                        radius
-                    )
-
-                    # 横线
-                    painter.drawLine(
-                        QPointF(px - radius - 3, py),
-                        QPointF(px + radius + 3, py)
-                    )
-
-                    # 竖线
-                    painter.drawLine(
-                        QPointF(px, py - radius - 3),
-                        QPointF(px, py + radius + 3)
-                    )
-
-        # -------------------------
-        # 3. 绘制机器人
-        # -------------------------
-        if (
-                self.robot_x is not None
-                and self.robot_y is not None
-        ):
-            pixel = self.coordinate_transform.world_to_pixel(
-                self.robot_x,
-                self.robot_y
-            )
-
-            if pixel is not None:
-                px, py = pixel
-
-                robot_color = QColor(170, 0, 255)
-
-                painter.setPen(
-                    QPen(robot_color, 1)
-                )
-                painter.setBrush(
-                    QBrush(robot_color)
-                )
-
-                yaw = (
-                    self.robot_yaw
-                    if self.robot_yaw is not None
-                    else 0.0
-                )
-
-                length = 6.0
-                half_width = 3.5
-
-                forward_x = math.cos(yaw)
-                forward_y = -math.sin(yaw)
-
-                left_x = math.cos(
-                    yaw + math.pi / 2.0
-                )
-                left_y = -math.sin(
-                    yaw + math.pi / 2.0
-                )
-
-                tip = QPointF(
-                    px + length * forward_x,
-                    py + length * forward_y,
-                )
-
-                rear_left = QPointF(
-                    px - length * 0.6 * forward_x
-                    + half_width * left_x,
-                    py - length * 0.6 * forward_y
-                    + half_width * left_y,
-                )
-
-                rear_right = QPointF(
-                    px - length * 0.6 * forward_x
-                    - half_width * left_x,
-                    py - length * 0.6 * forward_y
-                    - half_width * left_y,
-                )
-
-                robot_triangle = QPolygonF([
-                    tip,
-                    rear_left,
-                    rear_right,
-                ])
-
-                painter.drawPolygon(robot_triangle)
-
-        painter.end()
-
-        pixmap = QPixmap.fromImage(display_image)
-
-        scaled_pixmap = pixmap.scaled(
-            self.map_label.size(),
-            Qt.KeepAspectRatio,
-            Qt.SmoothTransformation,
-        )
-
-        self.map_label.setPixmap(scaled_pixmap)
 
 
     def set_goal_publish_callback(self, callback):
         self.goal_publish_callback = callback
 
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self.refresh_map()
 
     def update_robot_pose(self, msg):
         self.robot_x = msg.pose.position.x
@@ -477,12 +358,28 @@ class SandboxWindow(QMainWindow):
 
         q = msg.pose.orientation
 
-        siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
-        cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+        siny_cosp = 2.0 * (
+                q.w * q.z
+                + q.x * q.y
+        )
 
-        self.robot_yaw = math.atan2(siny_cosp, cosy_cosp)
+        cosy_cosp = 1.0 - 2.0 * (
+                q.y * q.y
+                + q.z * q.z
+        )
 
-        self.refresh_map()
+        self.robot_yaw = math.atan2(
+            siny_cosp,
+            cosy_cosp,
+        )
+
+        self.map_widget.set_robot_pose(
+            (
+                self.robot_x,
+                self.robot_y,
+                self.robot_yaw,
+            )
+        )
 
     def update_global_plan(self, msg):
         self.global_plan_points = [
@@ -493,7 +390,10 @@ class SandboxWindow(QMainWindow):
             for pose in msg.poses
         ]
 
-        self.refresh_map()
+        self.map_widget.set_global_path(
+            self.global_plan_points
+        )
+
 
     def update_local_plan(self, msg):
         self.local_plan_points = [
@@ -504,7 +404,10 @@ class SandboxWindow(QMainWindow):
             for pose in msg.poses
         ]
 
-        self.refresh_map()
+        self.map_widget.set_local_path(
+            self.local_plan_points
+        )
+
 
     def update_actual_path(self, msg):
         self.actual_path_points = [
@@ -515,24 +418,23 @@ class SandboxWindow(QMainWindow):
             for pose in msg.poses
         ]
 
-        self.refresh_map()
-
-    def handle_map_click(self, label_x, label_y):
-        pixel = self.coordinate_transform.label_to_map_pixel(
-            label_x=label_x,
-            label_y=label_y,
-            label_width=self.map_label.width(),
-            label_height=self.map_label.height(),
+        self.map_widget.set_actual_path(
+            self.actual_path_points
         )
 
-        if pixel is None:
-            return
 
-        px, py = pixel
-
-        world = self.coordinate_transform.pixel_to_world(
-            px,
-            py
+    def handle_map_click(
+            self,
+            widget_x,
+            widget_y,
+    ):
+        world = (
+            self.coordinate_transform.widget_to_world(
+                widget_x=widget_x,
+                widget_y=widget_y,
+                widget_width=self.map_widget.width(),
+                widget_height=self.map_widget.height(),
+            )
         )
 
         if world is None:
@@ -543,50 +445,21 @@ class SandboxWindow(QMainWindow):
         self.goal_x = x
         self.goal_y = y
 
-        self.refresh_map()
+        self.map_widget.set_goal_pose(
+            (x, y)
+        )
 
         print(
             f'Map clicked: '
-            f'pixel=({px:.1f}, {py:.1f}), '
+            f'widget=({widget_x:.1f}, {widget_y:.1f}), '
             f'world=({x:.3f}, {y:.3f})'
         )
 
         if self.goal_publish_callback is not None:
-            self.goal_publish_callback(x, y)
-
-    def draw_path(self, painter, points, color, width=1):
-        if len(points) < 2:
-            return
-
-        painter.setPen(QPen(color, width))
-
-        previous_point = None
-
-        for x, y in points:
-            pixel = self.coordinate_transform.world_to_pixel(x, y)
-
-            if pixel is None:
-                continue
-
-            px, py = pixel
-
-            if not (
-                    0 <= px < self.map_width
-                    and 0 <= py < self.map_height
-            ):
-                previous_point = None
-                continue
-
-            current_point = QPointF(px, py)
-
-            if previous_point is not None:
-                painter.drawLine(
-                    previous_point,
-                    current_point
-                )
-
-            previous_point = current_point
-
+            self.goal_publish_callback(
+                x,
+                y,
+            )
 
 
 def main(args=None):

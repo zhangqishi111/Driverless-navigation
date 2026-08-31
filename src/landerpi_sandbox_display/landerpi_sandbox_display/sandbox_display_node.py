@@ -2,11 +2,22 @@ import math
 import sys
 
 import rclpy
+
+from nav_msgs.msg import Path
+
+from tf2_ros import (
+    Buffer,
+    TransformException,
+    TransformListener,
+)
+
+from tf2_geometry_msgs import (
+    do_transform_pose_stamped,
+)
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import OccupancyGrid, Path
 from PyQt5.QtCore import QTimer
-from PyQt5.QtGui import QColor, QImage
-from PyQt5.QtWidgets import QApplication, QMainWindow
+from PyQt5.QtWidgets import QApplication
 from rclpy.node import Node
 from rclpy.qos import (
     DurabilityPolicy,
@@ -15,6 +26,7 @@ from rclpy.qos import (
     ReliabilityPolicy,
 )
 
+from landerpi_sandbox_display.main_window import MainWindow
 from landerpi_sandbox_display.coordinate_transform import CoordinateTransform
 from landerpi_sandbox_display.map_widget import MapWidget
 
@@ -37,6 +49,12 @@ class SandboxDisplayNode(Node):
         self.local_plan_update_callback = local_plan_update_callback
         self.actual_path_update_callback = actual_path_update_callback
 
+        self.tf_buffer = Buffer()
+
+        self.tf_listener = TransformListener(
+            self.tf_buffer,
+            self,
+        )
         # 实际轨迹发布器
         self.actual_path_publisher = self.create_publisher(
             Path,
@@ -194,14 +212,42 @@ class SandboxDisplayNode(Node):
             self.plan_update_callback(msg)
 
     def local_plan_callback(self, msg):
-        if msg.header.frame_id != 'map':
+        if msg.header.frame_id == 'map':
+            map_path = msg
+
+        elif msg.header.frame_id == 'odom':
+            try:
+                transform = (
+                    self.tf_buffer.lookup_transform(
+                        'map',
+                        'odom',
+                        rclpy.time.Time(),
+                    )
+                )
+
+                map_path = transform_path(
+                    msg,
+                    transform,
+                )
+
+            except TransformException as exc:
+                self.get_logger().warning(
+                    'Unable to transform '
+                    f'/local_plan from odom to map: {exc}'
+                )
+                return
+
+        else:
             self.get_logger().warning(
-                f'/local_plan frame is "{msg.header.frame_id}", expected "map".'
+                'Unsupported /local_plan frame: '
+                f'"{msg.header.frame_id}"'
             )
             return
 
         if self.local_plan_update_callback is not None:
-            self.local_plan_update_callback(msg)
+            self.local_plan_update_callback(
+                map_path
+            )
 
     def actual_path_callback(self, msg):
         if msg.header.frame_id != 'map':
@@ -239,235 +285,34 @@ class SandboxDisplayNode(Node):
         if self.map_update_callback is not None:
             self.map_update_callback(msg)
 
+def transform_path(path_msg, transform):
+    transformed_path = Path()
 
-class SandboxWindow(QMainWindow):
-    def __init__(self):
-        super().__init__()
+    transformed_path.header = path_msg.header
+    transformed_path.header.frame_id = (
+        transform.header.frame_id
+    )
 
-        self.setWindowTitle('LanderPi Sandbox Display')
-        self.resize(900, 600)
-
-        self.goal_publish_callback = None
-
-        # 坐标转换器必须先创建
-        self.coordinate_transform = CoordinateTransform()
-
-        # 新的高清地图控件
-        self.map_widget = MapWidget(
-            coordinate_transform=self.coordinate_transform,
+    transformed_path.poses = [
+        do_transform_pose_stamped(
+            pose,
+            transform,
         )
+        for pose in path_msg.poses
+    ]
 
-        self.map_widget.setMinimumSize(
-            600,
-            500,
-        )
-
-        # 保留地图点击 → Goal 的功能
-        self.map_widget.clicked.connect(
-            self.handle_map_click
-        )
-
-        # MapWidget 正式成为主窗口中央控件
-        self.setCentralWidget(
-            self.map_widget
-        )
-
-        self.map_image = None
-
-        self.map_width = 0
-        self.map_height = 0
-        self.map_resolution = 0.0
-        self.map_origin_x = 0.0
-        self.map_origin_y = 0.0
-
-        self.robot_x = None
-        self.robot_y = None
-        self.robot_yaw = None
-
-        self.global_plan_points = []
-        self.local_plan_points = []
-        self.actual_path_points = []
-
-        self.goal_x = None
-        self.goal_y = None
-
-    def update_map(self, msg):
-        width = msg.info.width
-        height = msg.info.height
-
-        self.map_width = width
-        self.map_height = height
-        self.map_resolution = msg.info.resolution
-        self.map_origin_x = msg.info.origin.position.x
-        self.map_origin_y = msg.info.origin.position.y
-
-        self.coordinate_transform.update_map_info(
-            width=width,
-            height=height,
-            resolution=msg.info.resolution,
-            origin_x=msg.info.origin.position.x,
-            origin_y=msg.info.origin.position.y,
-        )
-
-        image = QImage(
-            width,
-            height,
-            QImage.Format_Grayscale8,
-        )
-
-        for y in range(height):
-            for x in range(width):
-                value = msg.data[y * width + x]
-
-                if value < 0:
-                    gray = 128
-                elif value >= 50:
-                    gray = 0
-                else:
-                    gray = 255
-
-                image.setPixelColor(
-                    x,
-                    y,
-                    QColor(gray, gray, gray),
-                )
-
-        # ROS 地图原点左下，Qt 图像原点左上
-        image = image.mirrored(
-            False,
-            True,
-        )
-
-        self.map_image = image
-
-        # 交给新的高清 MapWidget
-        self.map_widget.set_map_image(
-            image
-        )
+    return transformed_path
 
 
-
-
-    def set_goal_publish_callback(self, callback):
-        self.goal_publish_callback = callback
-
-
-    def update_robot_pose(self, msg):
-        self.robot_x = msg.pose.position.x
-        self.robot_y = msg.pose.position.y
-
-        q = msg.pose.orientation
-
-        siny_cosp = 2.0 * (
-                q.w * q.z
-                + q.x * q.y
-        )
-
-        cosy_cosp = 1.0 - 2.0 * (
-                q.y * q.y
-                + q.z * q.z
-        )
-
-        self.robot_yaw = math.atan2(
-            siny_cosp,
-            cosy_cosp,
-        )
-
-        self.map_widget.set_robot_pose(
-            (
-                self.robot_x,
-                self.robot_y,
-                self.robot_yaw,
-            )
-        )
-
-    def update_global_plan(self, msg):
-        self.global_plan_points = [
-            (
-                pose.pose.position.x,
-                pose.pose.position.y,
-            )
-            for pose in msg.poses
-        ]
-
-        self.map_widget.set_global_path(
-            self.global_plan_points
-        )
-
-
-    def update_local_plan(self, msg):
-        self.local_plan_points = [
-            (
-                pose.pose.position.x,
-                pose.pose.position.y,
-            )
-            for pose in msg.poses
-        ]
-
-        self.map_widget.set_local_path(
-            self.local_plan_points
-        )
-
-
-    def update_actual_path(self, msg):
-        self.actual_path_points = [
-            (
-                pose.pose.position.x,
-                pose.pose.position.y,
-            )
-            for pose in msg.poses
-        ]
-
-        self.map_widget.set_actual_path(
-            self.actual_path_points
-        )
-
-
-    def handle_map_click(
-            self,
-            widget_x,
-            widget_y,
-    ):
-        world = (
-            self.coordinate_transform.widget_to_world(
-                widget_x=widget_x,
-                widget_y=widget_y,
-                widget_width=self.map_widget.width(),
-                widget_height=self.map_widget.height(),
-            )
-        )
-
-        if world is None:
-            return
-
-        x, y = world
-
-        self.goal_x = x
-        self.goal_y = y
-
-        self.map_widget.set_goal_pose(
-            (x, y)
-        )
-
-        print(
-            f'Map clicked: '
-            f'widget=({widget_x:.1f}, {widget_y:.1f}), '
-            f'world=({x:.3f}, {y:.3f})'
-        )
-
-        if self.goal_publish_callback is not None:
-            self.goal_publish_callback(
-                x,
-                y,
-            )
-
+def create_main_window():
+    return MainWindow()
 
 def main(args=None):
     rclpy.init(args=args)
 
     app = QApplication(sys.argv)
 
-    window = SandboxWindow()
+    window = create_main_window()
 
     node = SandboxDisplayNode(
         map_update_callback=window.update_map,

@@ -36,6 +36,8 @@ In RViz, set an initial pose before navigating.  A UI can publish a
 | output | `/plan` | `nav_msgs/Path` | Global path |
 | output | `/local_plan` | `nav_msgs/Path` | Local path |
 | output | `/navigation_status` | `std_msgs/String` | `planning`, `navigating`, `arrived`, or a rejection/failure reason |
+| output | `/arrival_status` | `std_msgs/Bool` | Latched, `true` only after Nav2 reports successful arrival; remains independent of diagnostic text |
+| output | `/position_error` | `std_msgs/Float32` | Latched map-frame XY distance (metres) from `/robot_pose` to the latest valid target |
 | output | `/cmd_vel` | `geometry_msgs/Twist` | Command consumed by A's fake driver |
 
 ## Acceptance checks
@@ -44,3 +46,7 @@ In RViz, set an initial pose before navigating.  A UI can publish a
 2. `/amcl_pose` and `/robot_pose` update after an initial pose is set.
 3. A free-space `/goal_pose` creates `/plan`, then `/local_plan`, then `/cmd_vel`.
 4. Only AMCL publishes `map -> odom` in this mode.
+
+`/local_plan` is intentionally in the `odom` frame because the local
+costmap/controller operate in that frame. Consumers must transform it to
+`map` for overlay instead of treating this normal frame choice as a warning.

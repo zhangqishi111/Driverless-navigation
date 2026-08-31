@@ -2,6 +2,18 @@ import math
 import sys
 
 import rclpy
+
+from nav_msgs.msg import Path
+
+from tf2_ros import (
+    Buffer,
+    TransformException,
+    TransformListener,
+)
+
+from tf2_geometry_msgs import (
+    do_transform_pose_stamped,
+)
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import OccupancyGrid, Path
 from PyQt5.QtCore import QTimer
@@ -37,6 +49,12 @@ class SandboxDisplayNode(Node):
         self.local_plan_update_callback = local_plan_update_callback
         self.actual_path_update_callback = actual_path_update_callback
 
+        self.tf_buffer = Buffer()
+
+        self.tf_listener = TransformListener(
+            self.tf_buffer,
+            self,
+        )
         # 实际轨迹发布器
         self.actual_path_publisher = self.create_publisher(
             Path,
@@ -194,14 +212,42 @@ class SandboxDisplayNode(Node):
             self.plan_update_callback(msg)
 
     def local_plan_callback(self, msg):
-        if msg.header.frame_id != 'map':
+        if msg.header.frame_id == 'map':
+            map_path = msg
+
+        elif msg.header.frame_id == 'odom':
+            try:
+                transform = (
+                    self.tf_buffer.lookup_transform(
+                        'map',
+                        'odom',
+                        rclpy.time.Time(),
+                    )
+                )
+
+                map_path = transform_path(
+                    msg,
+                    transform,
+                )
+
+            except TransformException as exc:
+                self.get_logger().warning(
+                    'Unable to transform '
+                    f'/local_plan from odom to map: {exc}'
+                )
+                return
+
+        else:
             self.get_logger().warning(
-                f'/local_plan frame is "{msg.header.frame_id}", expected "map".'
+                'Unsupported /local_plan frame: '
+                f'"{msg.header.frame_id}"'
             )
             return
 
         if self.local_plan_update_callback is not None:
-            self.local_plan_update_callback(msg)
+            self.local_plan_update_callback(
+                map_path
+            )
 
     def actual_path_callback(self, msg):
         if msg.header.frame_id != 'map':
@@ -238,6 +284,24 @@ class SandboxDisplayNode(Node):
 
         if self.map_update_callback is not None:
             self.map_update_callback(msg)
+
+def transform_path(path_msg, transform):
+    transformed_path = Path()
+
+    transformed_path.header = path_msg.header
+    transformed_path.header.frame_id = (
+        transform.header.frame_id
+    )
+
+    transformed_path.poses = [
+        do_transform_pose_stamped(
+            pose,
+            transform,
+        )
+        for pose in path_msg.poses
+    ]
+
+    return transformed_path
 
 
 def create_main_window():

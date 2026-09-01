@@ -9,7 +9,11 @@ from PyQt5.QtTest import QTest
 
 from landerpi_sandbox_display.map_widget import MapWidget
 from landerpi_sandbox_display.coordinate_transform import CoordinateTransform
-
+from landerpi_sandbox_display.sandbox_display_node import (
+    SandboxDisplayNode,
+    downsample_poses,
+    transform_to_pose_stamped,
+)
 
 
 app = QApplication.instance()
@@ -448,3 +452,15 @@ def test_map_widget_emits_clicked_signal_on_left_click():
     assert received == [
         (23.0, 37.0)
     ]
+
+def test_downsample_poses_limits_size_and_preserves_ends():
+    poses = list(range(2000))
+
+    result = downsample_poses(
+        poses,
+        max_points=800,
+    )
+
+    assert len(result) == 800
+    assert result[0] == 0
+    assert result[-1] == 1999

@@ -22,6 +22,7 @@ setup(
     entry_points={
         'console_scripts': [
             'sim_interface_node = landerpi_base_driver.sim_interface_node:main',
+            'cmd_vel_adapter_node = landerpi_base_driver.cmd_vel_adapter_node:main',
         ],
     },
 )

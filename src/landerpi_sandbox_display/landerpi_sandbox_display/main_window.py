@@ -43,6 +43,8 @@ class MainWindow(QMainWindow):
         self.goal_x = None
         self.goal_y = None
 
+        self._state_revisions = {}
+
         self.map_widget = MapWidget(
             coordinate_transform=self.coordinate_transform,
         )
@@ -467,6 +469,40 @@ class MainWindow(QMainWindow):
         self.actual_path_value.setText(
             f'{len(points)} points'
         )
+
+    def refresh_from_state(self, state):
+        snapshot = state.snapshot()
+
+        handlers = {
+            'map': self.update_map,
+            'robot_pose': self.update_robot_pose,
+            'global_plan': self.update_global_plan,
+            'local_plan': self.update_local_plan,
+            'actual_path': self.update_actual_path,
+        }
+
+        for name, handler in handlers.items():
+            revision = snapshot.revisions.get(
+                name,
+                0,
+            )
+
+            previous_revision = (
+                self._state_revisions.get(
+                    name,
+                    0,
+                )
+            )
+
+            if revision == previous_revision:
+                continue
+
+            value = snapshot.values.get(name)
+
+            if value is not None:
+                handler(value)
+
+            self._state_revisions[name] = revision
 
     def set_goal_publish_callback(self, callback):
         self.goal_publish_callback = callback

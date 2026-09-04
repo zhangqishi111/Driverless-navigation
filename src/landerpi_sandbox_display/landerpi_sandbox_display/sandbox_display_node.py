@@ -5,6 +5,12 @@ import rclpy
 
 from nav_msgs.msg import Path
 
+from threading import Thread
+
+from rclpy.executors import SingleThreadedExecutor
+
+from landerpi_sandbox_display.ui_state import DisplayState
+
 from tf2_ros import (
     Buffer,
     TransformException,
@@ -38,10 +44,16 @@ class SandboxDisplayNode(Node):
             plan_update_callback=None,
             local_plan_update_callback=None,
             actual_path_update_callback=None,
+            display_state=None,
 
 
     ):
         super().__init__('sandbox_display_node')
+
+        if display_state is None:
+            display_state = DisplayState()
+
+        self.display_state = display_state
 
         self.map_update_callback = map_update_callback
         self.robot_pose_update_callback = robot_pose_update_callback
@@ -55,11 +67,18 @@ class SandboxDisplayNode(Node):
             self.tf_buffer,
             self,
         )
-        # 实际轨迹发布器
+
+        actual_path_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.VOLATILE,
+        )
+
         self.actual_path_publisher = self.create_publisher(
             Path,
             '/actual_path',
-            10,
+            actual_path_qos,
         )
 
         # 保存实际轨迹
@@ -71,12 +90,36 @@ class SandboxDisplayNode(Node):
 
         # 机器人移动超过 3cm 才记录一个轨迹点
         self.actual_path_min_distance = 0.03
+        # UI 最多绘制 800 个 Actual Path 点
+        self.actual_path_display_max_points = 800
+
+        # 新轨迹点产生后，只标记 dirty，
+        # 不在高频 TF callback 中直接发布/绘制整条轨迹。
+        self.actual_path_ui_dirty = False
+        self.actual_path_publish_dirty = False
+
+        # 红线 UI 最高 5 Hz 刷新
+        self.actual_path_ui_timer = self.create_timer(
+            0.2,
+            self.refresh_actual_path_display,
+        )
+
+        # /actual_path 对外最高 1 Hz 发布
+        self.actual_path_publish_timer = self.create_timer(
+            1.0,
+            self.publish_actual_path_if_dirty,
+        )
 
         map_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
             depth=1,
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+
+        self.robot_tf_timer = self.create_timer(
+            0.05,
+            self.update_robot_pose_from_tf,
         )
 
         # 订阅地图
@@ -109,12 +152,6 @@ class SandboxDisplayNode(Node):
             10,
         )
 
-        self.actual_path_subscription = self.create_subscription(
-            Path,
-            '/actual_path',
-            self.actual_path_callback,
-            10,
-        )
 
         self.goal_pose_publisher = self.create_publisher(
             PoseStamped,
@@ -153,16 +190,17 @@ class SandboxDisplayNode(Node):
     def robot_pose_callback(self, msg):
         if msg.header.frame_id != 'map':
             self.get_logger().warning(
-                f'/robot_pose frame is "{msg.header.frame_id}", expected "map".'
+                f'/robot_pose frame is "{msg.header.frame_id}", '
+                'expected "map".'
             )
             return
 
-        # 更新界面中的机器人
-        if self.robot_pose_update_callback is not None:
-            self.robot_pose_update_callback(msg)
+        # /robot_pose 保留作为 AMCL 统一接口。
+        # 不再直接驱动实时机器人绘制。
+        self.display_state.update_amcl_pose(
+            msg
+        )
 
-        # 记录实际轨迹
-        self.update_actual_path(msg)
 
     def update_actual_path(self, msg):
         x = msg.pose.position.x
@@ -192,14 +230,58 @@ class SandboxDisplayNode(Node):
             self.get_clock().now().to_msg()
         )
 
-        self.actual_path.poses.append(pose)
-
-        self.actual_path_publisher.publish(
-            self.actual_path
+        self.actual_path.poses.append(
+            pose
         )
 
         self.last_actual_x = x
         self.last_actual_y = y
+
+        # 只做标记。
+        # 真正的 UI 刷新和 DDS 发布由低频 timer 完成。
+        self.actual_path_ui_dirty = True
+        self.actual_path_publish_dirty = True
+
+    def refresh_actual_path_display(self):
+        if not self.actual_path_ui_dirty:
+            return
+
+        display_path = Path()
+
+        display_path.header = (
+            self.actual_path.header
+        )
+
+        display_path.poses = downsample_poses(
+            self.actual_path.poses,
+            self.actual_path_display_max_points,
+        )
+
+        self.display_state.update_actual_path(
+            display_path
+        )
+
+        self.actual_path_ui_dirty = False
+
+    def publish_actual_path_if_dirty(self):
+        if not self.actual_path_publish_dirty:
+            return
+
+        self.actual_path.header.stamp = (
+            self.get_clock().now().to_msg()
+        )
+
+        # 没有外部订阅者时，不做整条 Path 的 DDS 序列化。
+        if (
+                self.actual_path_publisher
+                        .get_subscription_count()
+                > 0
+        ):
+            self.actual_path_publisher.publish(
+                self.actual_path
+            )
+
+        self.actual_path_publish_dirty = False
 
     def plan_callback(self, msg):
         if msg.header.frame_id != 'map':
@@ -207,9 +289,11 @@ class SandboxDisplayNode(Node):
                 f'/plan frame is "{msg.header.frame_id}", expected "map".'
             )
             return
+        self.display_state.update_global_plan(
+            msg
+        )
 
-        if self.plan_update_callback is not None:
-            self.plan_update_callback(msg)
+
 
     def local_plan_callback(self, msg):
         if msg.header.frame_id == 'map':
@@ -221,7 +305,9 @@ class SandboxDisplayNode(Node):
                     self.tf_buffer.lookup_transform(
                         'map',
                         'odom',
-                        rclpy.time.Time(),
+                        rclpy.time.Time.from_msg(
+                            msg.header.stamp
+                        ),
                     )
                 )
 
@@ -244,20 +330,9 @@ class SandboxDisplayNode(Node):
             )
             return
 
-        if self.local_plan_update_callback is not None:
-            self.local_plan_update_callback(
-                map_path
-            )
-
-    def actual_path_callback(self, msg):
-        if msg.header.frame_id != 'map':
-            self.get_logger().warning(
-                f'/actual_path frame is "{msg.header.frame_id}", expected "map".'
-            )
-            return
-
-        if self.actual_path_update_callback is not None:
-            self.actual_path_update_callback(msg)
+        self.display_state.update_local_plan(
+            map_path
+        )
 
     def map_callback(self, msg):
         info = msg.info
@@ -282,8 +357,60 @@ class SandboxDisplayNode(Node):
                 f'{info.origin.position.y:.3f})'
             )
 
-        if self.map_update_callback is not None:
-            self.map_update_callback(msg)
+        self.display_state.update_map(
+            msg
+        )
+
+    def update_robot_pose_from_tf(self):
+        try:
+            transform = (
+                self.tf_buffer.lookup_transform(
+                    'map',
+                    'base_link',
+                    rclpy.time.Time(),
+                )
+            )
+
+        except TransformException:
+            return
+
+        pose = transform_to_pose_stamped(
+            transform
+        )
+
+        self.display_state.update_robot_pose(
+            pose
+        )
+
+        self.update_actual_path(
+           pose
+        )
+
+
+def downsample_poses(
+        poses,
+        max_points=800,
+):
+    if len(poses) <= max_points:
+        return list(poses)
+
+    if max_points < 2:
+        return [poses[-1]]
+
+    step = (
+        (len(poses) - 1)
+        / (max_points - 1)
+    )
+
+    indices = [
+        round(i * step)
+        for i in range(max_points)
+    ]
+
+    return [
+        poses[index]
+        for index in indices
+    ]
 
 def transform_path(path_msg, transform):
     transformed_path = Path()
@@ -303,6 +430,29 @@ def transform_path(path_msg, transform):
 
     return transformed_path
 
+def transform_to_pose_stamped(transform):
+    pose = PoseStamped()
+
+    pose.header = transform.header
+
+    pose.pose.position.x = (
+        transform.transform.translation.x
+    )
+
+    pose.pose.position.y = (
+        transform.transform.translation.y
+    )
+
+    pose.pose.position.z = (
+        transform.transform.translation.z
+    )
+
+    pose.pose.orientation = (
+        transform.transform.rotation
+    )
+
+    return pose
+
 
 def create_main_window():
     return MainWindow()
@@ -314,29 +464,53 @@ def main(args=None):
 
     window = create_main_window()
 
+    display_state = DisplayState()
+
     node = SandboxDisplayNode(
-        map_update_callback=window.update_map,
-        robot_pose_update_callback=window.update_robot_pose,
-        plan_update_callback=window.update_global_plan,
-        local_plan_update_callback=window.update_local_plan,
-        actual_path_update_callback=window.update_actual_path,
+        display_state=display_state,
     )
 
     window.set_goal_publish_callback(
         node.publish_goal_pose
     )
 
-    window.show()
+    # ROS 使用独立 Executor。
+    # ROS callback 不再依赖 Qt 主线程处理。
+    executor = SingleThreadedExecutor()
+    executor.add_node(node)
 
-    timer = QTimer()
-    timer.timeout.connect(
-        lambda: rclpy.spin_once(node, timeout_sec=0.0)
+    ros_thread = Thread(
+        target=executor.spin,
+        daemon=True,
     )
-    timer.start(20)
+
+    ros_thread.start()
+
+    # Qt 只负责每 50ms 读取一次“最新状态”。
+    ui_timer = QTimer()
+
+    ui_timer.timeout.connect(
+        lambda: window.refresh_from_state(
+            display_state
+        )
+    )
+
+    ui_timer.start(50)
+
+    window.show()
 
     exit_code = app.exec_()
 
+    ui_timer.stop()
+
+    executor.shutdown()
+
+    ros_thread.join(
+        timeout=2.0
+    )
+
     node.destroy_node()
+
     rclpy.shutdown()
 
     sys.exit(exit_code)

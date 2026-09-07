@@ -179,8 +179,10 @@ controller_server:
       trans_stopped_velocity: 0.02
       short_circuit_trajectory_evaluation: True
       stateful: True
-      critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
-      BaseObstacle.scale: 0.02
+      # Check the oriented rectangular footprint along each sampled trajectory.
+      # BaseObstacle checks only the reference-point cost, not the rectangle edges.
+      critics: ["RotateToGoal", "Oscillation", "ObstacleFootprint", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
+      ObstacleFootprint.scale: 0.02
       PathAlign.scale: 32.0
       PathAlign.forward_point_distance: 0.1
       GoalAlign.scale: 24.0
@@ -213,7 +215,8 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        # 仅保留 10 cm 的软避让区；实际硬碰撞边界由 footprint 保证。
+        # 已实测的 10 cm 膨胀范围；并非车体外额外 10 cm，内圈仍可能为硬代价。
+        # 局部 DWB 由 ObstacleFootprint 按预测姿态检查矩形轮廓；仍须实车验收。
         inflation_radius: 0.10
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"

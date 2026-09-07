@@ -203,8 +203,9 @@ local_costmap:
       width: 3
       height: 3
       resolution: 0.05
-      # 临时安全半径；接入真实 LanderPi 后由 A 按车体外接圆复核。
-      robot_radius: 0.22
+      # 实车最大投影尺寸约 0.23 x 0.17 m；每侧保留约 2 cm 安全余量。
+      # 使用矩形脚印而非外接圆，避免在平行贴墙或窄路时过度压缩可通行区域。
+      footprint: "[[0.135, 0.105], [0.135, -0.105], [-0.135, -0.105], [-0.135, 0.105]]"
       # Keep static obstacles locally as well as laser obstacles.  The prior
       # configuration declared this layer but omitted it from plugins, so the
       # local controller could only react to current laser returns.
@@ -212,7 +213,8 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.55
+        # 仅保留 10 cm 的软避让区；实际硬碰撞边界由 footprint 保证。
+        inflation_radius: 0.10
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
@@ -240,7 +242,8 @@ global_costmap:
       global_frame: map
       robot_base_frame: base_link
       use_sim_time: True
-      robot_radius: 0.22
+      # 与局部代价地图保持一致的实车矩形脚印。
+      footprint: "[[0.135, 0.105], [0.135, -0.105], [-0.135, -0.105], [-0.135, 0.105]]"
       resolution: 0.05
       track_unknown_space: true
       # The static map provides global routing.  Dynamic laser returns remain
@@ -253,7 +256,7 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.55
+        inflation_radius: 0.10
       always_send_full_costmap: True
 
 map_server:

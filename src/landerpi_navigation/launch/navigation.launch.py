@@ -10,10 +10,10 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import Node, SetRemap
 
 
 def generate_launch_description():
@@ -48,6 +48,16 @@ def generate_launch_description():
         }.items(),
     )
 
+    # Nav2's stock navigation launch feeds the velocity smoother's output to
+    # ``/cmd_vel``.  The vendor odom/controller node also subscribes directly
+    # to that topic, bypassing our safety adapter and receiving a second copy
+    # of every navigation command.  Scope a remap around Nav2 so the smoother
+    # publishes only to the adapter's dedicated input topic.
+    nav2_with_dedicated_output = GroupAction([
+        SetRemap(src='cmd_vel_smoothed', dst='cmd_vel_nav_output'),
+        nav2,
+    ])
+
     return LaunchDescription([
         DeclareLaunchArgument(
             'use_sim_time', default_value='true',
@@ -61,7 +71,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'autostart', default_value='true',
             description='Transition Nav2 lifecycle nodes to active automatically.'),
-        nav2,
+        nav2_with_dedicated_output,
         Node(
             package='landerpi_navigation',
             executable='robot_pose_bridge.py',

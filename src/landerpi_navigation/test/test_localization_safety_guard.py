@@ -597,3 +597,316 @@ def test_watchdog_publishes_zero_after_localization_timeout():
 
         if rclpy.ok():
             rclpy.shutdown()
+
+
+def test_stationary_odom_keeps_gate_ready_when_amcl_pose_is_old():
+    module = load_guard_module()
+
+    gate = module.LocalizationGate(
+        position_variance_threshold=0.25,
+        yaw_variance_threshold=0.25,
+        pose_timeout=1.0,
+        required_good_updates=3,
+    )
+
+    gate.update_pose(
+        position_variance=0.10,
+        yaw_variance=0.10,
+        stamp_sec=0.0,
+    )
+    gate.update_pose(
+        position_variance=0.10,
+        yaw_variance=0.10,
+        stamp_sec=0.1,
+    )
+    gate.update_pose(
+        position_variance=0.10,
+        yaw_variance=0.10,
+        stamp_sec=0.2,
+    )
+
+    assert gate.is_ready(0.2)
+
+    # Odom remains alive, but the robot stays at the same pose.
+    gate.update_odometry(
+        x=1.0,
+        y=2.0,
+        yaw=0.5,
+        stamp_sec=0.2,
+    )
+    gate.update_odometry(
+        x=1.0,
+        y=2.0,
+        yaw=0.5,
+        stamp_sec=2.0,
+    )
+
+    # AMCL pose is now older than pose_timeout, but the robot did not move.
+    assert gate.is_ready(2.0)
+
+
+def test_small_odom_motion_keeps_gate_ready_when_amcl_pose_is_old():
+    module = load_guard_module()
+
+    gate = module.LocalizationGate(
+        position_variance_threshold=0.25,
+        yaw_variance_threshold=0.25,
+        pose_timeout=1.0,
+        required_good_updates=3,
+    )
+
+    gate.update_pose(
+        position_variance=0.10,
+        yaw_variance=0.10,
+        stamp_sec=0.0,
+    )
+    gate.update_pose(
+        position_variance=0.10,
+        yaw_variance=0.10,
+        stamp_sec=0.1,
+    )
+    gate.update_pose(
+        position_variance=0.10,
+        yaw_variance=0.10,
+        stamp_sec=0.2,
+    )
+
+    assert gate.is_ready(0.2)
+
+    gate.update_odometry(
+        x=0.0,
+        y=0.0,
+        yaw=0.0,
+        stamp_sec=0.2,
+    )
+
+    # Small odom drift: below AMCL update thresholds
+    # update_min_d = 0.25 m, update_min_a = 0.20 rad.
+    gate.update_odometry(
+        x=0.05,
+        y=0.03,
+        yaw=0.05,
+        stamp_sec=2.0,
+    )
+
+    assert gate.is_ready(2.0)
+
+
+def test_large_odom_motion_locks_gate_when_amcl_pose_is_old():
+    module = load_guard_module()
+
+    gate = module.LocalizationGate(
+        position_variance_threshold=0.25,
+        yaw_variance_threshold=0.25,
+        pose_timeout=1.0,
+        required_good_updates=3,
+    )
+
+    gate.update_pose(
+        position_variance=0.10,
+        yaw_variance=0.10,
+        stamp_sec=0.0,
+    )
+    gate.update_pose(
+        position_variance=0.10,
+        yaw_variance=0.10,
+        stamp_sec=0.1,
+    )
+    gate.update_pose(
+        position_variance=0.10,
+        yaw_variance=0.10,
+        stamp_sec=0.2,
+    )
+
+    assert gate.is_ready(0.2)
+
+    gate.update_odometry(
+        x=0.0,
+        y=0.0,
+        yaw=0.0,
+        stamp_sec=0.2,
+    )
+
+    # Robot moved beyond AMCL's update_min_d = 0.25 m,
+    # but no new AMCL pose arrived.
+    gate.update_odometry(
+        x=0.40,
+        y=0.0,
+        yaw=0.0,
+        stamp_sec=2.0,
+    )
+
+    assert not gate.is_ready(2.0)
+
+
+def test_new_amcl_pose_resets_odom_motion_reference():
+    module = load_guard_module()
+
+    gate = module.LocalizationGate(
+        position_variance_threshold=0.25,
+        yaw_variance_threshold=0.25,
+        pose_timeout=1.0,
+        required_good_updates=3,
+    )
+
+    gate.update_pose(
+        position_variance=0.10,
+        yaw_variance=0.10,
+        stamp_sec=0.0,
+    )
+    gate.update_pose(
+        position_variance=0.10,
+        yaw_variance=0.10,
+        stamp_sec=0.1,
+    )
+    gate.update_pose(
+        position_variance=0.10,
+        yaw_variance=0.10,
+        stamp_sec=0.2,
+    )
+
+    gate.update_odometry(
+        x=0.0,
+        y=0.0,
+        yaw=0.0,
+        stamp_sec=0.2,
+    )
+
+    # Robot moves beyond the old reference.
+    gate.update_odometry(
+        x=0.30,
+        y=0.0,
+        yaw=0.0,
+        stamp_sec=0.5,
+    )
+
+    # AMCL successfully updates at the new location.
+    gate.update_pose(
+        position_variance=0.10,
+        yaw_variance=0.10,
+        stamp_sec=0.5,
+    )
+
+    # Only a tiny amount of motion occurs after that new AMCL update.
+    gate.update_odometry(
+        x=0.34,
+        y=0.0,
+        yaw=0.02,
+        stamp_sec=2.0,
+    )
+
+    # The 0.30 m old motion must no longer count.
+    assert gate.is_ready(2.0)
+
+
+def test_ros_node_subscribes_to_odom():
+    import rclpy
+
+    module = load_guard_module()
+
+    rclpy.init()
+    node = None
+
+    try:
+        node = module.LocalizationSafetyGuardNode()
+
+        subscriptions = node.get_subscriptions_info_by_topic(
+            "/odom"
+        )
+
+        assert len(subscriptions) >= 1
+
+    finally:
+        if node is not None:
+            node.destroy_node()
+
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+def test_extract_yaw_from_quaternion():
+    import math
+
+    module = load_guard_module()
+
+    yaw = 0.5
+    x = 0.0
+    y = 0.0
+    z = math.sin(yaw / 2.0)
+    w = math.cos(yaw / 2.0)
+
+    result = module.extract_yaw_from_quaternion(x, y, z, w)
+
+    assert abs(result - yaw) < 1e-6
+
+
+def test_odom_callback_updates_gate():
+    import math
+    import rclpy
+    from nav_msgs.msg import Odometry
+
+    module = load_guard_module()
+
+    rclpy.init()
+    node = None
+
+    try:
+        node = module.LocalizationSafetyGuardNode()
+
+        msg = Odometry()
+        msg.pose.pose.position.x = 1.20
+        msg.pose.pose.position.y = -0.40
+
+        yaw = 0.5
+        msg.pose.pose.orientation.z = math.sin(yaw / 2.0)
+        msg.pose.pose.orientation.w = math.cos(yaw / 2.0)
+
+        node._odom_callback(msg)
+
+        assert node.gate._latest_odom is not None
+
+        x, y, actual_yaw, _ = node.gate._latest_odom
+
+        assert abs(x - 1.20) < 1e-6
+        assert abs(y - (-0.40)) < 1e-6
+        assert abs(actual_yaw - 0.5) < 1e-6
+
+    finally:
+        if node is not None:
+            node.destroy_node()
+
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+def test_amcl_update_margin_does_not_lock_at_point_three_meters():
+    module = load_guard_module()
+
+    gate = module.LocalizationGate(
+        position_variance_threshold=0.30,
+        yaw_variance_threshold=0.25,
+        pose_timeout=1.0,
+        required_good_updates=3,
+    )
+
+    gate.update_pose(0.10, 0.10, 0.0)
+    gate.update_pose(0.10, 0.10, 0.1)
+    gate.update_pose(0.10, 0.10, 0.2)
+
+    gate.update_odometry(
+        x=0.0,
+        y=0.0,
+        yaw=0.0,
+        stamp_sec=0.2,
+    )
+
+    # AMCL update_min_d is 0.25 m.
+    # Give AMCL some margin before declaring localization stale.
+    gate.update_odometry(
+        x=0.30,
+        y=0.0,
+        yaw=0.0,
+        stamp_sec=2.0,
+    )
+
+    assert gate.is_ready(2.0)

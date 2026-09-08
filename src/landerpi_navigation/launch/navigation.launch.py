@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Launch map-based AMCL + Nav2 navigation for the LanderPi simulation.
+"""Launch map-based AMCL + Nav2 navigation for the LanderPi.
 
 This launch file intentionally does not start SLAM Toolbox.  In navigation
 mode AMCL is the sole publisher of map -> odom; B's mapping launch belongs to
@@ -41,7 +41,7 @@ def generate_launch_description():
             'use_sim_time': use_sim_time,
             'params_file': params_file,
             'autostart': autostart,
-            # Separate processes make first-week integration failures visible.
+            # Separate processes make integration failures visible.
             'use_composition': 'False',
             'use_respawn': 'False',
             'log_level': 'info',

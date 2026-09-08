@@ -58,3 +58,67 @@ def test_transform_path_from_odom_to_map():
     assert abs(
         transformed_pose.pose.position.y - 4.0
     ) < 1e-6
+
+from types import SimpleNamespace
+
+from geometry_msgs.msg import TransformStamped
+from nav_msgs.msg import Path
+
+from landerpi_sandbox_display.sandbox_display_node import (
+    SandboxDisplayNode,
+)
+
+
+class FakeTfBuffer:
+    def __init__(self):
+        self.requested_time = None
+
+    def lookup_transform(
+        self,
+        target_frame,
+        source_frame,
+        time,
+    ):
+        self.requested_time = time
+
+        transform = TransformStamped()
+        transform.header.frame_id = 'map'
+        transform.child_frame_id = 'odom'
+
+        return transform
+
+
+class FakeDisplayState:
+    def update_local_plan(self, plan):
+        self.plan = plan
+
+
+class FakeLogger:
+    def warning(self, *_args, **_kwargs):
+        pass
+
+
+def test_local_plan_uses_message_timestamp_for_tf_lookup():
+    msg = Path()
+    msg.header.frame_id = 'odom'
+
+    msg.header.stamp.sec = 821
+    msg.header.stamp.nanosec = 613000000
+
+    tf_buffer = FakeTfBuffer()
+
+    fake_node = SimpleNamespace(
+        tf_buffer=tf_buffer,
+        display_state=FakeDisplayState(),
+        get_logger=lambda: FakeLogger(),
+    )
+
+    SandboxDisplayNode.local_plan_callback(
+        fake_node,
+        msg,
+    )
+
+    assert (
+        tf_buffer.requested_time.nanoseconds
+        == 821_613_000_000
+    )

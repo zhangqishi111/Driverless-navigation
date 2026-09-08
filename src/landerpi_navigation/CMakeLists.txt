@@ -10,6 +10,7 @@ install(DIRECTORY config launch
 install(PROGRAMS
   scripts/robot_pose_bridge.py
   scripts/goal_bridge.py
+  scripts/localization_safety_guard.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

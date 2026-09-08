@@ -123,8 +123,57 @@ class LocalizationSafetyGuardNode(Node):
             10,
         )
 
+        self.watchdog_timer = self.create_timer(
+            0.1,
+            self._watchdog_callback,
+        )
+
     def _amcl_pose_callback(self, msg):
-        pass
+        position_variance, yaw_variance = extract_amcl_variances(
+            msg.pose.covariance
+        )
+
+        now_sec = self.get_clock().now().nanoseconds / 1e9
+
+        self.gate.update_pose(
+            position_variance=position_variance,
+            yaw_variance=yaw_variance,
+            stamp_sec=now_sec,
+        )
 
     def _cmd_vel_callback(self, msg):
+        now_sec = self.get_clock().now().nanoseconds / 1e9
+
+        if not self.gate.is_ready(now_sec):
+            stop_msg = Twist()
+            self.cmd_publisher.publish(stop_msg)
+            return
+
+        self.cmd_publisher.publish(msg)
+
+    def _watchdog_callback(self):
+        now_sec = self.get_clock().now().nanoseconds / 1e9
+
+        if not self.gate.is_ready(now_sec):
+            stop_msg = Twist()
+            self.cmd_publisher.publish(stop_msg)
+
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    node = LocalizationSafetyGuardNode()
+
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
         pass
+    finally:
+        node.destroy_node()
+
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()

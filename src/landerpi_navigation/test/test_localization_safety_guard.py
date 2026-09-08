@@ -360,3 +360,240 @@ def test_ros_node_exposes_expected_topics():
 
         if rclpy.ok():
             rclpy.shutdown()
+
+
+def test_amcl_callback_updates_localization_gate():
+    import rclpy
+    from geometry_msgs.msg import PoseWithCovarianceStamped
+
+    module = load_guard_module()
+
+    rclpy.init()
+    node = None
+
+    try:
+        node = module.LocalizationSafetyGuardNode()
+
+        msg = PoseWithCovarianceStamped()
+        msg.pose.covariance[0] = 0.10
+        msg.pose.covariance[7] = 0.12
+        msg.pose.covariance[35] = 0.10
+
+        node._amcl_pose_callback(msg)
+        node._amcl_pose_callback(msg)
+        node._amcl_pose_callback(msg)
+
+        now_sec = (
+            node.get_clock().now().nanoseconds / 1e9
+        )
+
+        assert node.gate.is_ready(now_sec)
+
+    finally:
+        if node is not None:
+            node.destroy_node()
+
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+def test_cmd_vel_callback_publishes_zero_when_localization_not_ready():
+    import rclpy
+    from geometry_msgs.msg import Twist
+
+    module = load_guard_module()
+
+    class FakePublisher:
+        def __init__(self):
+            self.messages = []
+
+        def publish(self, msg):
+            self.messages.append(msg)
+
+    rclpy.init()
+    node = None
+
+    try:
+        node = module.LocalizationSafetyGuardNode()
+
+        fake_publisher = FakePublisher()
+        node.cmd_publisher = fake_publisher
+
+        msg = Twist()
+        msg.linear.x = 0.10
+        msg.linear.y = 0.05
+        msg.angular.z = 0.20
+
+        node._cmd_vel_callback(msg)
+
+        assert len(fake_publisher.messages) == 1
+
+        output = fake_publisher.messages[0]
+
+        assert output.linear.x == 0.0
+        assert output.linear.y == 0.0
+        assert output.angular.z == 0.0
+
+    finally:
+        if node is not None:
+            node.destroy_node()
+
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+def test_cmd_vel_callback_publishes_zero_when_localization_not_ready():
+    import rclpy
+    from geometry_msgs.msg import Twist
+
+    module = load_guard_module()
+
+    class FakePublisher:
+        def __init__(self):
+            self.messages = []
+
+        def publish(self, msg):
+            self.messages.append(msg)
+
+    rclpy.init()
+    node = None
+
+    try:
+        node = module.LocalizationSafetyGuardNode()
+
+        fake_publisher = FakePublisher()
+        node.cmd_publisher = fake_publisher
+
+        msg = Twist()
+        msg.linear.x = 0.10
+        msg.linear.y = 0.05
+        msg.angular.z = 0.20
+
+        node._cmd_vel_callback(msg)
+
+        assert len(fake_publisher.messages) == 1
+
+        output = fake_publisher.messages[0]
+
+        assert output.linear.x == 0.0
+        assert output.linear.y == 0.0
+        assert output.angular.z == 0.0
+
+    finally:
+        if node is not None:
+            node.destroy_node()
+
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+def test_cmd_vel_callback_passes_velocity_when_localization_ready():
+    import rclpy
+    from geometry_msgs.msg import PoseWithCovarianceStamped, Twist
+
+    module = load_guard_module()
+
+    class FakePublisher:
+        def __init__(self):
+            self.messages = []
+
+        def publish(self, msg):
+            self.messages.append(msg)
+
+    rclpy.init()
+    node = None
+
+    try:
+        node = module.LocalizationSafetyGuardNode()
+
+        fake_publisher = FakePublisher()
+        node.cmd_publisher = fake_publisher
+
+        pose_msg = PoseWithCovarianceStamped()
+        pose_msg.pose.covariance[0] = 0.10
+        pose_msg.pose.covariance[7] = 0.12
+        pose_msg.pose.covariance[35] = 0.10
+
+        node._amcl_pose_callback(pose_msg)
+        node._amcl_pose_callback(pose_msg)
+        node._amcl_pose_callback(pose_msg)
+
+        cmd_msg = Twist()
+        cmd_msg.linear.x = 0.10
+        cmd_msg.linear.y = 0.05
+        cmd_msg.angular.z = 0.20
+
+        node._cmd_vel_callback(cmd_msg)
+
+        assert len(fake_publisher.messages) == 1
+
+        output = fake_publisher.messages[0]
+
+        assert output.linear.x == 0.10
+        assert output.linear.y == 0.05
+        assert output.angular.z == 0.20
+
+    finally:
+        if node is not None:
+            node.destroy_node()
+
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+def test_watchdog_publishes_zero_after_localization_timeout():
+    import rclpy
+    from geometry_msgs.msg import PoseWithCovarianceStamped
+
+    module = load_guard_module()
+
+    class FakePublisher:
+        def __init__(self):
+            self.messages = []
+
+        def publish(self, msg):
+            self.messages.append(msg)
+
+    rclpy.init()
+    node = None
+
+    try:
+        node = module.LocalizationSafetyGuardNode()
+
+        fake_publisher = FakePublisher()
+        node.cmd_publisher = fake_publisher
+
+        pose_msg = PoseWithCovarianceStamped()
+        pose_msg.pose.covariance[0] = 0.10
+        pose_msg.pose.covariance[7] = 0.12
+        pose_msg.pose.covariance[35] = 0.10
+
+        node._amcl_pose_callback(pose_msg)
+        node._amcl_pose_callback(pose_msg)
+        node._amcl_pose_callback(pose_msg)
+
+        now_sec = node.get_clock().now().nanoseconds / 1e9
+        assert node.gate.is_ready(now_sec)
+
+        node.gate._last_pose_stamp = (
+            now_sec - node.gate.pose_timeout - 0.1
+        )
+
+        assert hasattr(node, "watchdog_timer")
+
+        node._watchdog_callback()
+
+        assert len(fake_publisher.messages) == 1
+
+        output = fake_publisher.messages[0]
+
+        assert output.linear.x == 0.0
+        assert output.linear.y == 0.0
+        assert output.angular.z == 0.0
+
+    finally:
+        if node is not None:
+            node.destroy_node()
+
+        if rclpy.ok():
+            rclpy.shutdown()

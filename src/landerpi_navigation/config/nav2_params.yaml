@@ -32,8 +32,10 @@ amcl:
     sigma_hit: 0.2
     tf_broadcast: true
     transform_tolerance: 0.2
-    update_min_a: 0.2
-    update_min_d: 0.25
+    # The vendor odometry is command-integrated rather than encoder-backed.
+    # Re-observe with the laser before its accumulated error becomes visible.
+    update_min_a: 0.05
+    update_min_d: 0.05
     z_hit: 0.5
     z_max: 0.05
     z_rand: 0.5
@@ -182,7 +184,10 @@ controller_server:
       # Check the oriented rectangular footprint along each sampled trajectory.
       # BaseObstacle checks only the reference-point cost, not the rectangle edges.
       critics: ["RotateToGoal", "Oscillation", "ObstacleFootprint", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
-      ObstacleFootprint.scale: 0.02
+      # Prefer trajectories with real clearance; collision checking remains
+      # rectangular through ObstacleFootprint, this only changes the ranking
+      # of non-colliding candidates.
+      ObstacleFootprint.scale: 0.05
       PathAlign.scale: 32.0
       PathAlign.forward_point_distance: 0.1
       GoalAlign.scale: 24.0
@@ -214,9 +219,9 @@ local_costmap:
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        # 已实测的 10 cm 膨胀范围；并非车体外额外 10 cm，内圈仍可能为硬代价。
-        # 局部 DWB 由 ObstacleFootprint 按预测姿态检查矩形轮廓；仍须实车验收。
+        # Keep the local field conservative: it is also used by DWB to reject
+        # sampled manoeuvres, so widening it prematurely can block tight turns.
+        cost_scaling_factor: 2.0
         inflation_radius: 0.10
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
@@ -258,8 +263,10 @@ global_costmap:
         map_subscribe_transient_local: True
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.10
+        # Give the global planner a wider preference for road centres.  The
+        # radius is a cost field, not an extra physical robot radius.
+        cost_scaling_factor: 2.0
+        inflation_radius: 0.22
       always_send_full_costmap: True
 
 map_server:

@@ -53,6 +53,9 @@ class MainWindow(QMainWindow):
             self.handle_map_click
         )
 
+        # -------------------------
+        # Robot State
+        # -------------------------
 
         self.robot_state_panel = self._create_panel(
             'Robot State'
@@ -75,6 +78,10 @@ class MainWindow(QMainWindow):
             'Yaw',
         )
 
+        # -------------------------
+        # Navigation Task
+        # -------------------------
+
         self.navigation_task_panel = self._create_panel(
             'Navigation Task'
         )
@@ -91,6 +98,12 @@ class MainWindow(QMainWindow):
         self.goal_y_value = self._add_value_row(
             navigation_layout,
             'Goal Y',
+        )
+
+        # 第三周：当前位置到目标位置的 XY 距离误差
+        self.position_error_value = self._add_value_row(
+            navigation_layout,
+            'Position Error',
         )
 
         self.global_path_value = self._add_value_row(
@@ -110,6 +123,10 @@ class MainWindow(QMainWindow):
             'Actual Path',
             '0 points',
         )
+
+        # -------------------------
+        # Map Info
+        # -------------------------
 
         self.map_info_panel = self._create_panel(
             'Map Info'
@@ -328,7 +345,7 @@ class MainWindow(QMainWindow):
             for x in range(width):
                 value = msg.data[
                     y * width + x
-                    ]
+                ]
 
                 if value < 0:
                     gray = 128
@@ -419,6 +436,16 @@ class MainWindow(QMainWindow):
             f'{math.degrees(yaw):.1f}°'
         )
 
+    def update_position_error(self, error):
+        """
+        显示机器人当前位置到目标位置的 XY 距离误差。
+
+        error 单位为米。
+        """
+        self.position_error_value.setText(
+            f'{float(error):.3f} m'
+        )
+
     def update_global_plan(self, msg):
         points = [
             (
@@ -476,6 +503,7 @@ class MainWindow(QMainWindow):
         handlers = {
             'map': self.update_map,
             'robot_pose': self.update_robot_pose,
+            'position_error': self.update_position_error,
             'global_plan': self.update_global_plan,
             'local_plan': self.update_local_plan,
             'actual_path': self.update_actual_path,

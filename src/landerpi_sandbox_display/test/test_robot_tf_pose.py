@@ -1,5 +1,6 @@
 from geometry_msgs.msg import TransformStamped
 from types import SimpleNamespace
+from std_msgs.msg import Float32
 
 from landerpi_sandbox_display.sandbox_display_node import (
     SandboxDisplayNode,
@@ -95,3 +96,27 @@ def test_downsample_poses_limits_size_and_preserves_ends():
     assert len(result) == 800
     assert result[0] == 0
     assert result[-1] == 1999
+
+def test_position_error_callback_updates_display_state():
+        class FakePositionErrorState:
+            def __init__(self):
+                self.position_error = None
+
+            def update_position_error(self, error):
+                self.position_error = error
+
+        state = FakePositionErrorState()
+
+        fake_node = SimpleNamespace(
+            display_state=state,
+        )
+
+        msg = Float32()
+        msg.data = 0.123
+
+        SandboxDisplayNode.position_error_callback(
+            fake_node,
+            msg,
+        )
+
+        assert state.position_error == 0.123

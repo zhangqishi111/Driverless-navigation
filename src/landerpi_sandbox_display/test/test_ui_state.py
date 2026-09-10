@@ -58,3 +58,13 @@ def test_display_state_tracks_all_display_data():
     assert snapshot.values['global_plan'] == 'global'
     assert snapshot.values['local_plan'] == 'local'
     assert snapshot.values['actual_path'] == 'actual'
+
+def test_display_state_tracks_position_error():
+    state = DisplayState()
+
+    state.update_position_error(0.123)
+
+    snapshot = state.snapshot()
+
+    assert snapshot.values['position_error'] == 0.123
+    assert snapshot.revisions['position_error'] == 1

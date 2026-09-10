@@ -4,6 +4,7 @@ import sys
 import rclpy
 
 from nav_msgs.msg import Path
+from std_msgs.msg import Float32
 
 from threading import Thread
 
@@ -20,10 +21,13 @@ from tf2_ros import (
 from tf2_geometry_msgs import (
     do_transform_pose_stamped,
 )
+
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import OccupancyGrid, Path
+
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QApplication
+
 from rclpy.node import Node
 from rclpy.qos import (
     DurabilityPolicy,
@@ -36,6 +40,7 @@ from landerpi_sandbox_display.main_window import MainWindow
 from landerpi_sandbox_display.coordinate_transform import CoordinateTransform
 from landerpi_sandbox_display.map_widget import MapWidget
 
+
 class SandboxDisplayNode(Node):
     def __init__(
             self,
@@ -45,8 +50,6 @@ class SandboxDisplayNode(Node):
             local_plan_update_callback=None,
             actual_path_update_callback=None,
             display_state=None,
-
-
     ):
         super().__init__('sandbox_display_node')
 
@@ -90,6 +93,7 @@ class SandboxDisplayNode(Node):
 
         # 机器人移动超过 3cm 才记录一个轨迹点
         self.actual_path_min_distance = 0.03
+
         # UI 最多绘制 800 个 Actual Path 点
         self.actual_path_display_max_points = 800
 
@@ -117,6 +121,7 @@ class SandboxDisplayNode(Node):
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
 
+        # 20 Hz 从 TF 获取机器人实时位置
         self.robot_tf_timer = self.create_timer(
             0.05,
             self.update_robot_pose_from_tf,
@@ -130,7 +135,7 @@ class SandboxDisplayNode(Node):
             map_qos,
         )
 
-        # 订阅机器人实时位姿
+        # 订阅机器人定位位姿
         self.robot_pose_subscription = self.create_subscription(
             PoseStamped,
             '/robot_pose',
@@ -138,6 +143,7 @@ class SandboxDisplayNode(Node):
             10,
         )
 
+        # 订阅全局规划路径
         self.plan_subscription = self.create_subscription(
             Path,
             '/plan',
@@ -145,6 +151,7 @@ class SandboxDisplayNode(Node):
             10,
         )
 
+        # 订阅局部规划路径
         self.local_plan_subscription = self.create_subscription(
             Path,
             '/local_plan',
@@ -152,7 +159,15 @@ class SandboxDisplayNode(Node):
             10,
         )
 
+        # 订阅机器人当前位置与目标之间的 XY 位置误差
+        self.position_error_subscription = self.create_subscription(
+            Float32,
+            '/position_error',
+            self.position_error_callback,
+            10,
+        )
 
+        # 发布导航目标
         self.goal_pose_publisher = self.create_publisher(
             PoseStamped,
             '/goal_pose',
@@ -162,7 +177,8 @@ class SandboxDisplayNode(Node):
         self._last_map_signature = None
 
         self.get_logger().info(
-            'Sandbox display node started. Waiting for /map and /robot_pose...'
+            'Sandbox display node started. '
+            'Waiting for /map and /robot_pose...'
         )
 
     def publish_goal_pose(self, x, y):
@@ -184,7 +200,20 @@ class SandboxDisplayNode(Node):
         self.goal_pose_publisher.publish(msg)
 
         self.get_logger().info(
-            f'Published /goal_pose: x={x:.3f}, y={y:.3f}, yaw=0.000'
+            f'Published /goal_pose: '
+            f'x={x:.3f}, y={y:.3f}, yaw=0.000'
+        )
+
+    def position_error_callback(self, msg):
+        """
+        接收导航模块发布的 /position_error。
+
+        /position_error 类型为 std_msgs/msg/Float32，
+        表示机器人当前位置到最新有效目标点之间的
+        map 坐标系 XY 欧氏距离，单位为米。
+        """
+        self.display_state.update_position_error(
+            float(msg.data)
         )
 
     def robot_pose_callback(self, msg):
@@ -200,7 +229,6 @@ class SandboxDisplayNode(Node):
         self.display_state.update_amcl_pose(
             msg
         )
-
 
     def update_actual_path(self, msg):
         x = msg.pose.position.x
@@ -274,7 +302,7 @@ class SandboxDisplayNode(Node):
         # 没有外部订阅者时，不做整条 Path 的 DDS 序列化。
         if (
                 self.actual_path_publisher
-                        .get_subscription_count()
+                .get_subscription_count()
                 > 0
         ):
             self.actual_path_publisher.publish(
@@ -286,14 +314,14 @@ class SandboxDisplayNode(Node):
     def plan_callback(self, msg):
         if msg.header.frame_id != 'map':
             self.get_logger().warning(
-                f'/plan frame is "{msg.header.frame_id}", expected "map".'
+                f'/plan frame is "{msg.header.frame_id}", '
+                'expected "map".'
             )
             return
+
         self.display_state.update_global_plan(
             msg
         )
-
-
 
     def local_plan_callback(self, msg):
         if msg.header.frame_id == 'map':
@@ -383,7 +411,7 @@ class SandboxDisplayNode(Node):
         )
 
         self.update_actual_path(
-           pose
+            pose
         )
 
 
@@ -412,6 +440,7 @@ def downsample_poses(
         for index in indices
     ]
 
+
 def transform_path(path_msg, transform):
     transformed_path = Path()
 
@@ -429,6 +458,7 @@ def transform_path(path_msg, transform):
     ]
 
     return transformed_path
+
 
 def transform_to_pose_stamped(transform):
     pose = PoseStamped()
@@ -456,6 +486,7 @@ def transform_to_pose_stamped(transform):
 
 def create_main_window():
     return MainWindow()
+
 
 def main(args=None):
     rclpy.init(args=args)

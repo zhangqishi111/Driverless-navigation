@@ -1,6 +1,8 @@
 cmd_vel_adapter:
   ros__parameters:
-    input_topic: /cmd_vel
+    # Nav2 velocity smoother output.  Do not use /cmd_vel here: the vendor
+    # controller subscribes to /cmd_vel itself, which would bypass this adapter.
+    input_topic: /cmd_vel_nav_output
     output_topic: /controller/cmd_vel
 
     # 厂家底盘低于约0.03 m/s时不能有效运动。

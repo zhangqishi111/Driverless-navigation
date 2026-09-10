@@ -29,14 +29,22 @@ class GoalBridge(Node):
             Bool, '/arrival_status', last_value_qos)
         self._position_error = self.create_publisher(
             Float32, '/position_error', last_value_qos)
+        # Keep a task queue from being preempted by a single-goal UI click.
+        self._navigation_claim = self.create_publisher(
+            Bool, '/navigation_goal_bridge/active', last_value_qos)
         self._goal_handle = None
         self._goal_pending = False
         self._goal_pose = None
         self._robot_pose = None
+        self._task_queue_active = False
         self.create_subscription(PoseStamped, '/goal_pose', self._on_goal, 10)
         self.create_subscription(PoseStamped, '/robot_pose', self._on_robot_pose, 10)
+        self.create_subscription(
+            Bool, '/navigation_task/active', self._on_task_queue_active,
+            last_value_qos)
         self.create_timer(0.2, self._publish_position_error)
         self._publish_arrival(False)
+        self._publish_navigation_claim(False)
 
     def _publish_status(self, text: str) -> None:
         message = String()
@@ -48,6 +56,14 @@ class GoalBridge(Node):
         message = Bool()
         message.data = arrived
         self._arrival_status.publish(message)
+
+    def _publish_navigation_claim(self, active: bool) -> None:
+        message = Bool()
+        message.data = active
+        self._navigation_claim.publish(message)
+
+    def _on_task_queue_active(self, message: Bool) -> None:
+        self._task_queue_active = message.data
 
     def _on_robot_pose(self, pose: PoseStamped) -> None:
         if pose.header.frame_id != 'map':
@@ -72,6 +88,9 @@ class GoalBridge(Node):
         if pose.header.frame_id != 'map':
             self._publish_status('rejected: /goal_pose frame_id must be map')
             return
+        if self._task_queue_active:
+            self._publish_status('rejected: a navigation task is active')
+            return
         if self._goal_handle is not None or self._goal_pending:
             self._publish_status('rejected: a navigation goal is already active')
             return
@@ -80,11 +99,13 @@ class GoalBridge(Node):
         # Without this guard, two UI clicks in the same executor cycle can both
         # be submitted to Nav2, producing the rejection seen in integration.
         self._goal_pending = True
+        self._publish_navigation_claim(True)
         self._goal_pose = pose
         self._publish_arrival(False)
         self._publish_position_error()
         if not self._client.server_is_ready():
             self._goal_pending = False
+            self._publish_navigation_claim(False)
             self._publish_status('rejected: NavigateToPose action server is not ready')
             return
 
@@ -96,6 +117,7 @@ class GoalBridge(Node):
                 request, feedback_callback=self._on_feedback)
         except Exception as error:
             self._goal_pending = False
+            self._publish_navigation_claim(False)
             self._publish_status(f'failed: could not submit navigation goal: {error}')
             self._publish_arrival(False)
             return
@@ -106,10 +128,12 @@ class GoalBridge(Node):
         try:
             goal_handle = future.result()
         except Exception as error:  # Action transport failures are terminal.
+            self._publish_navigation_claim(False)
             self._publish_status(f'failed: could not submit navigation goal: {error}')
             self._publish_arrival(False)
             return
         if not goal_handle.accepted:
+            self._publish_navigation_claim(False)
             self._publish_status('rejected: Nav2 did not accept the goal')
             self._publish_arrival(False)
             return
@@ -129,6 +153,7 @@ class GoalBridge(Node):
             self._publish_status(f'failed: navigation result unavailable: {error}')
             self._publish_arrival(False)
             self._goal_handle = None
+            self._publish_navigation_claim(False)
             return
 
         if status == GoalStatus.STATUS_SUCCEEDED:
@@ -141,6 +166,7 @@ class GoalBridge(Node):
             self._publish_status(f'failed: NavigateToPose status={status}')
             self._publish_arrival(False)
         self._goal_handle = None
+        self._publish_navigation_claim(False)
 
 
 def main() -> None:

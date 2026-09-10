@@ -16,6 +16,10 @@ setup(
     maintainer_email='team@example.com',
     description='Optional multi-goal task management for LanderPi.',
     license='Apache-2.0',
-    entry_points={'console_scripts': []},
+    entry_points={
+        'console_scripts': [
+            'task_queue = landerpi_task_manager.task_queue:main',
+        ],
+    },
 )
 

@@ -82,8 +82,18 @@ class UnavailableActionClient:
         return False
 
 
+@pytest.fixture(scope='module', autouse=True)
+def ros_context():
+    started_here = not rclpy.ok()
+    if started_here:
+        rclpy.init()
+    yield
+    if started_here and rclpy.ok():
+        rclpy.shutdown()
+
+
 @pytest.fixture
-def queue():
+def queue(ros_context):
     if not rclpy.ok():
         rclpy.init()
     node = NavigationTaskQueue()
@@ -95,8 +105,6 @@ def queue():
     node._localization_error = ''
     yield node
     node.destroy_node()
-    if rclpy.ok():
-        rclpy.shutdown()
 
 
 def make_pose(x=1.0, y=2.0):

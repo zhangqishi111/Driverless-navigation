@@ -124,3 +124,15 @@ def test_display_state_tracks_task_time():
         snapshot.revisions['task_time']
         == 1
     )
+
+
+def test_display_state_tracks_navigation_task_state_independently():
+    state = DisplayState()
+
+    state.update_navigation_task_state('task-1')
+    state.update_navigation_task_state('task-2')
+
+    snapshot = state.snapshot()
+
+    assert snapshot.values['navigation_task_state'] == 'task-2'
+    assert snapshot.revisions['navigation_task_state'] == 2

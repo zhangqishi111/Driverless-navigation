@@ -63,6 +63,12 @@ class DisplayState:
             task_time,
         )
 
+    def update_navigation_task_state(self, task_state):
+        self._update(
+            'navigation_task_state',
+            task_state,
+        )
+
     def snapshot(self):
         with self._lock:
             return StateSnapshot(

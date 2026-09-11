@@ -45,6 +45,8 @@ class MainWindow(QMainWindow):
         )
 
         self.goal_publish_callback = None
+        self.task_publish_callback = None
+        self.task_cancel_callback = None
 
         self.goal_x = None
         self.goal_y = None
@@ -714,6 +716,12 @@ class MainWindow(QMainWindow):
         self.goal_publish_callback = (
             callback
         )
+
+    def set_task_publish_callback(self, callback):
+        self.task_publish_callback = callback
+
+    def set_task_cancel_callback(self, callback):
+        self.task_cancel_callback = callback
 
     def handle_map_click(
             self,

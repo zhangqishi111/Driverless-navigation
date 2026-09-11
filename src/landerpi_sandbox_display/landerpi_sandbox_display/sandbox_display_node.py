@@ -5,7 +5,7 @@ import time
 import rclpy
 
 from nav_msgs.msg import Path
-from std_msgs.msg import Bool, Float32, String
+from std_msgs.msg import Bool, Empty, Float32, String
 
 from threading import Thread
 
@@ -23,7 +23,8 @@ from tf2_geometry_msgs import (
     do_transform_pose_stamped,
 )
 
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import Pose, PoseArray, PoseStamped
+from landerpi_msgs.msg import NavigationTaskState
 from nav_msgs.msg import OccupancyGrid, Path
 
 from PyQt5.QtCore import QTimer
@@ -40,6 +41,7 @@ from rclpy.qos import (
 from landerpi_sandbox_display.main_window import MainWindow
 from landerpi_sandbox_display.coordinate_transform import CoordinateTransform
 from landerpi_sandbox_display.map_widget import MapWidget
+from landerpi_sandbox_display.task_draft import yaw_to_quaternion
 
 
 class SandboxDisplayNode(Node):
@@ -210,6 +212,13 @@ class SandboxDisplayNode(Node):
             10,
         )
 
+        self.navigation_task_state_subscription = self.create_subscription(
+            NavigationTaskState,
+            '/navigation_task/state',
+            self.navigation_task_state_callback,
+            map_qos,
+        )
+
         # =========================
         # Publishers
         # =========================
@@ -217,6 +226,18 @@ class SandboxDisplayNode(Node):
         self.goal_pose_publisher = self.create_publisher(
             PoseStamped,
             '/goal_pose',
+            10,
+        )
+
+        self.navigation_task_publisher = self.create_publisher(
+            PoseArray,
+            '/navigation_task/goals',
+            10,
+        )
+
+        self.navigation_task_cancel_publisher = self.create_publisher(
+            Empty,
+            '/navigation_task/cancel',
             10,
         )
 
@@ -253,6 +274,40 @@ class SandboxDisplayNode(Node):
             f'Published /goal_pose: '
             f'x={x:.3f}, y={y:.3f}, yaw=0.000'
         )
+
+    def publish_navigation_task(self, goals):
+        goals = tuple(goals)
+        if len(goals) < 1 or len(goals) > 3:
+            return False
+        if not all(
+                math.isfinite(value)
+                for goal in goals
+                for value in (goal.x, goal.y, goal.yaw)):
+            return False
+
+        message = PoseArray()
+        message.header.stamp = self.get_clock().now().to_msg()
+        message.header.frame_id = 'map'
+        for goal in goals:
+            pose = Pose()
+            pose.position.x = float(goal.x)
+            pose.position.y = float(goal.y)
+            pose.position.z = 0.0
+            quaternion = yaw_to_quaternion(float(goal.yaw))
+            pose.orientation.x = quaternion[0]
+            pose.orientation.y = quaternion[1]
+            pose.orientation.z = quaternion[2]
+            pose.orientation.w = quaternion[3]
+            message.poses.append(pose)
+
+        self.navigation_task_publisher.publish(message)
+        return True
+
+    def cancel_navigation_task(self):
+        self.navigation_task_cancel_publisher.publish(Empty())
+
+    def navigation_task_state_callback(self, message):
+        self.display_state.update_navigation_task_state(message)
 
     # =========================================================
     # Position Error
@@ -751,6 +806,14 @@ def main(args=None):
 
     window.set_goal_publish_callback(
         node.publish_goal_pose
+    )
+
+    window.set_task_publish_callback(
+        node.publish_navigation_task
+    )
+
+    window.set_task_cancel_callback(
+        node.cancel_navigation_task
     )
 
     # ROS 使用独立 Executor

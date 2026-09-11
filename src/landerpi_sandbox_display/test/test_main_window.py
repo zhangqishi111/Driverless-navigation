@@ -4,6 +4,7 @@ import math
 from nav_msgs.msg import Path
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import OccupancyGrid
+from landerpi_sandbox_display.ui_state import DisplayState
 
 os.environ.setdefault(
     'QT_QPA_PLATFORM',
@@ -437,5 +438,22 @@ def test_main_window_uses_map_info_panel_title():
         label.text() == 'Map Info'
         for label in labels
     )
+
+    window.close()
+
+def test_refresh_from_state_displays_position_error():
+    app = QApplication.instance()
+
+    if app is None:
+        app = QApplication([])
+
+    window = MainWindow()
+
+    state = DisplayState()
+    state.update_position_error(0.123)
+
+    window.refresh_from_state(state)
+
+    assert window.position_error_value.text() == '0.123 m'
 
     window.close()

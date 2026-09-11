@@ -633,6 +633,10 @@ class SandboxDisplayNode(Node):
             map_path
         )
 
+        callback = getattr(self, 'local_plan_update_callback', None)
+        if callback is not None:
+            callback(map_path)
+
     # =========================================================
     # Map
     # =========================================================

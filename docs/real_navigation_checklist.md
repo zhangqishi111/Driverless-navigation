@@ -14,7 +14,7 @@
 
 ```bash
 source /opt/ros/humble/setup.bash
-colcon build --packages-select landerpi_bringup landerpi_navigation landerpi_base_driver
+colcon build --packages-select landerpi_bringup landerpi_navigation landerpi_task_manager landerpi_base_driver
 source install/setup.bash
 
 # 确认已安装的地图文件和 YAML 指向的图片一致。

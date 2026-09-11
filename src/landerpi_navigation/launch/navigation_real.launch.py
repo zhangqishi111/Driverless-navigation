@@ -34,6 +34,8 @@ def generate_launch_description():
                 'params_file': params_file,
                 'use_sim_time': 'false',
                 'autostart': 'true',
+                # On the vehicle, verify the command after the safety adapter.
+                'task_stop_velocity_topic': '/controller/cmd_vel',
             }.items(),
         ),
     ])

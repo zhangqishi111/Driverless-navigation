@@ -28,6 +28,7 @@ def generate_launch_description():
     map_yaml = LaunchConfiguration('map')
     params_file = LaunchConfiguration('params_file')
     autostart = LaunchConfiguration('autostart')
+    task_stop_velocity_topic = LaunchConfiguration('task_stop_velocity_topic')
 
     nav2 = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -71,6 +72,9 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'autostart', default_value='true',
             description='Transition Nav2 lifecycle nodes to active automatically.'),
+        DeclareLaunchArgument(
+            'task_stop_velocity_topic', default_value='/cmd_vel_nav_output',
+            description='Velocity topic used to prove a task waypoint has stopped.'),
         nav2_with_dedicated_output,
         Node(
             package='landerpi_navigation',
@@ -85,5 +89,15 @@ def generate_launch_description():
             name='goal_bridge',
             output='screen',
             parameters=[{'use_sim_time': use_sim_time}],
+        ),
+        Node(
+            package='landerpi_task_manager',
+            executable='task_queue',
+            name='navigation_task_queue',
+            output='screen',
+            parameters=[{
+                'use_sim_time': use_sim_time,
+                'stop_velocity_topic': task_stop_velocity_topic,
+            }],
         ),
     ])

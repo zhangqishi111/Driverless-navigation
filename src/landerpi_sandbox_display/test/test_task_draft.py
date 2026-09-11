@@ -70,6 +70,17 @@ def test_undo_recomputes_the_new_last_automatic_yaw():
     assert draft.goals()[-1].yaw == pytest.approx(0.0)
 
 
+def test_undo_to_one_goal_restores_its_original_robot_yaw():
+    draft = TaskDraft()
+    draft.add(0.0, 0.0, robot_yaw=0.7)
+    draft.add(0.0, 1.0, robot_yaw=-0.4)
+
+    assert draft.goals()[0].yaw == pytest.approx(math.pi / 2.0)
+    draft.undo()
+
+    assert draft.goals()[0].yaw == pytest.approx(0.7)
+
+
 def test_clear_removes_all_goals():
     draft = TaskDraft()
     draft.add(0.0, 0.0, robot_yaw=0.0)

@@ -19,6 +19,7 @@ setup(
     license='Apache-2.0',
     entry_points={
         'console_scripts': [
+            'navigation_command_arbiter = landerpi_task_manager.command_arbiter:main',
             'task_queue = landerpi_task_manager.task_queue:main',
         ],
     },

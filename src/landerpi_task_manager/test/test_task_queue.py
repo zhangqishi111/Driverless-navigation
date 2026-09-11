@@ -267,6 +267,19 @@ def test_invalid_submission_publishes_a_structured_rejection(queue):
     assert snapshot.detail == 'task goals must use map frame'
 
 
+def test_each_idle_rejected_submission_gets_a_new_task_id(queue):
+    goals = make_goal_array(1)
+    goals.header.frame_id = 'odom'
+
+    queue._on_goals(goals)
+    first_id = queue._task_state.messages[-1].task_id
+    queue._on_goals(goals)
+    second_id = queue._task_state.messages[-1].task_id
+
+    assert first_id == 1
+    assert second_id == 2
+
+
 def test_cancel_while_goal_is_pending_still_waits_for_nav2_terminal_result(queue):
     queue._on_goals(make_goal_array(2))
     queue._goal_pending = True
@@ -405,6 +418,27 @@ def test_excessive_localization_covariance_rejects_submission(queue):
     snapshot = queue._task_state.messages[-1]
     assert snapshot.state == NavigationTaskState.REJECTED
     assert 'position variance' in snapshot.detail
+
+
+@pytest.mark.parametrize('index, value', [
+    (7, math.nan),
+    (35, math.inf),
+    (0, -0.01),
+    (7, -0.01),
+    (35, -0.01),
+])
+def test_invalid_localization_covariance_rejects_submission(queue, index, value):
+    localization = PoseWithCovarianceStamped()
+    localization.header.frame_id = 'map'
+    localization.pose.pose.orientation.w = 1.0
+    localization.pose.covariance[index] = value
+
+    queue._on_amcl_pose(localization)
+    queue._on_goals(make_goal_array(1))
+
+    snapshot = queue._task_state.messages[-1]
+    assert snapshot.state == NavigationTaskState.REJECTED
+    assert 'covariance' in snapshot.detail
 
 
 def test_unavailable_nav2_server_fails_first_point_without_dispatch(queue):

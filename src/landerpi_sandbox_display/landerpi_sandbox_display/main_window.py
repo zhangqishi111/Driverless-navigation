@@ -61,6 +61,7 @@ class MainWindow(QMainWindow):
         self.goal_y = None
         self.task_draft = TaskDraft(max_goals=3)
         self._task_active = False
+        self._cancel_pending = False
         self._updating_task_table = False
 
         self._state_revisions = {}
@@ -768,7 +769,8 @@ class MainWindow(QMainWindow):
         self.clear_task_button.setEnabled(editable)
         self.submit_task_button.setEnabled(
             editable and bool(self.task_draft.goals()))
-        self.cancel_task_button.setEnabled(self._task_active)
+        self.cancel_task_button.setEnabled(
+            self._task_active and not self._cancel_pending)
         if self._task_active:
             self.task_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         else:
@@ -867,8 +869,11 @@ class MainWindow(QMainWindow):
         self.task_publish_callback(goals)
 
     def cancel_navigation_task(self):
-        if not self._task_active or self.task_cancel_callback is None:
+        if (not self._task_active or self._cancel_pending or
+                self.task_cancel_callback is None):
             return
+        self._cancel_pending = True
+        self._update_task_controls()
         self.task_cancel_callback()
 
     @staticmethod
@@ -883,7 +888,11 @@ class MainWindow(QMainWindow):
 
     def update_navigation_task_state(self, message):
         self._task_active = bool(message.active)
-        if not self.multi_goal_mode_button.isChecked():
+        self._cancel_pending = False
+        should_show_task = (
+            message.active or
+            (message.state != NavigationTaskState.IDLE and bool(message.points)))
+        if should_show_task and not self.multi_goal_mode_button.isChecked():
             self.multi_goal_mode_button.setChecked(True)
 
         task_states = {

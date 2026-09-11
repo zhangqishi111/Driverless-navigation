@@ -652,7 +652,24 @@ def test_submit_publishes_the_whole_draft_once_and_cancel_is_one_shot():
     window.update_navigation_task_state(make_task_snapshot(active=True))
     window.cancel_task_button.click()
     assert cancelled == [True]
+    assert not window.cancel_task_button.isEnabled()
+    window.cancel_task_button.click()
+    assert cancelled == [True]
+    window.update_navigation_task_state(make_task_snapshot(active=True))
+    assert window.cancel_task_button.isEnabled()
 
+    window.close()
+
+
+def test_initial_idle_snapshot_keeps_default_single_goal_workflow():
+    window = MainWindow()
+    idle = NavigationTaskState()
+    idle.state = NavigationTaskState.IDLE
+
+    window.update_navigation_task_state(idle)
+
+    assert window.single_goal_mode_button.isChecked()
+    assert not window.multi_goal_mode_button.isChecked()
     window.close()
 
 

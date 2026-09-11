@@ -197,6 +197,15 @@ When the queue is idle, each non-conflicting submission attempt receives a new
 received while another task is active does not replace the active task
 snapshot; it is rejected only through the compatibility status channel.
 
+The single-goal bridge and multi-goal queue submit to the internal
+`/navigation_command` action. A dedicated arbiter is the only client allowed
+to submit to Nav2's `/navigate_to_pose` action and accepts only one unresolved
+command at a time. Before exposing its internal action after startup or restart,
+the arbiter sends Nav2 a cancel-all request so an orphaned command cannot
+overlap a new one. Unknown action outcomes keep the arbiter fail-closed. The
+two transient-local `active` topics remain useful status signals but are not
+the authoritative mutual-exclusion mechanism.
+
 Arrival error is the map-frame XY Euclidean distance between the target and the
 latest healthy AMCL pose. It is captured when continuous zero velocity has
 been confirmed, not merely when Nav2 first reports success. If no healthy pose
@@ -328,6 +337,8 @@ testable and avoids growing `MainWindow` into a mixed UI/domain object.
 - Failure at point 2 produces point states
   `[SUCCEEDED, FAILED, NOT_EXECUTED]` and never submits point 3.
 - Single-goal `/goal_pose` is rejected while the queue owns navigation.
+- Simultaneous single-goal and multi-goal submissions produce only one Nav2
+  action request.
 - A display started after completion receives the terminal state snapshot.
 - Simulation-time and real-time launches calculate elapsed time correctly.
 

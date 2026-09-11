@@ -16,7 +16,7 @@ from std_msgs.msg import Bool, Float32, String
 class GoalBridge(Node):
     def __init__(self):
         super().__init__('goal_bridge')
-        self._client = ActionClient(self, NavigateToPose, '/navigate_to_pose')
+        self._client = ActionClient(self, NavigateToPose, '/navigation_command')
         self._status = self.create_publisher(String, '/navigation_status', 10)
         last_value_qos = QoSProfile(
             depth=1,
@@ -94,7 +94,6 @@ class GoalBridge(Node):
         if self._goal_handle is not None or self._goal_pending:
             self._publish_status('rejected: a navigation goal is already active')
             return
-
         # Reserve the goal before the asynchronous action response arrives.
         # Without this guard, two UI clicks in the same executor cycle can both
         # be submitted to Nav2, producing the rejection seen in integration.

@@ -128,7 +128,7 @@ class NavigationTaskQueue(Node):
             UInt8, '/navigation_task/current_index', latched)
         self._task_state = self.create_publisher(
             NavigationTaskState, '/navigation_task/state', latched)
-        self._client = ActionClient(self, NavigateToPose, '/navigate_to_pose')
+        self._client = ActionClient(self, NavigateToPose, '/navigation_command')
         self.create_subscription(PoseArray, '/navigation_task/goals', self._on_goals, 10)
         self.create_subscription(Empty, '/navigation_task/cancel', self._on_cancel, 10)
         self.create_subscription(
@@ -292,11 +292,13 @@ class NavigationTaskQueue(Node):
         if sum(value * value for value in pose_values[3:]) <= 1e-8:
             return 'AMCL pose has an invalid orientation'
         covariance = message.pose.covariance
+        if not all(math.isfinite(value) for value in covariance):
+            return 'AMCL covariance contains non-finite values'
+        variance_indices = (0, 7, 14, 21, 28, 35)
+        if any(covariance[index] < 0.0 for index in variance_indices):
+            return 'AMCL covariance contains a negative variance'
         position_variance = max(covariance[0], covariance[7])
         yaw_variance = covariance[35]
-        if not all(math.isfinite(value) for value in
-                   (position_variance, yaw_variance)):
-            return 'AMCL covariance is non-finite'
         if position_variance > self._max_position_variance:
             return (f'AMCL position variance {position_variance:.3f} exceeds '
                     f'{self._max_position_variance:.3f}')
@@ -320,6 +322,10 @@ class NavigationTaskQueue(Node):
         if self._bridge_active:
             self._reject_submission('a single navigation goal is active')
             return
+        # A request that reaches validation while idle is a new task attempt,
+        # even when it is rejected.  Never overwrite an older retained result
+        # under the same task identifier.
+        self._task_id += 1
         if message.header.frame_id != 'map':
             self._reject_submission('task goals must use map frame')
             return
@@ -336,8 +342,6 @@ class NavigationTaskQueue(Node):
         if not self._localization_is_healthy(now):
             self._reject_submission(self._localization_error)
             return
-
-        self._task_id += 1
         self._goal_count = count
         self._goals = []
         self._records = []

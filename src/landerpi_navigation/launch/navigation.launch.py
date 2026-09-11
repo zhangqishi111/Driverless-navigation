@@ -77,6 +77,13 @@ def generate_launch_description():
             description='Velocity topic used to prove a task waypoint has stopped.'),
         nav2_with_dedicated_output,
         Node(
+            package='landerpi_task_manager',
+            executable='navigation_command_arbiter',
+            name='navigation_command_arbiter',
+            output='screen',
+            parameters=[{'use_sim_time': use_sim_time}],
+        ),
+        Node(
             package='landerpi_navigation',
             executable='robot_pose_bridge.py',
             name='robot_pose_bridge',

@@ -11,6 +11,7 @@ class DraftGoal:
     y: float
     yaw: float
     yaw_manual: bool = False
+    fallback_yaw: float = 0.0
 
 
 def yaw_to_quaternion(yaw: float) -> Tuple[float, float, float, float]:
@@ -43,6 +44,7 @@ class TaskDraft:
             x=float(x),
             y=float(y),
             yaw=float(initial_yaw),
+            fallback_yaw=float(initial_yaw),
         ))
         self._refresh_automatic_yaws()
         return True
@@ -71,7 +73,12 @@ class TaskDraft:
         return tuple(self._goals)
 
     def _refresh_automatic_yaws(self) -> None:
-        if len(self._goals) < 2:
+        if not self._goals:
+            return
+        if len(self._goals) == 1:
+            goal = self._goals[0]
+            if not goal.yaw_manual:
+                self._goals[0] = replace(goal, yaw=goal.fallback_yaw)
             return
         for index in range(len(self._goals) - 1):
             goal = self._goals[index]

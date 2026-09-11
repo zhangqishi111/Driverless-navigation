@@ -1,6 +1,6 @@
 from geometry_msgs.msg import TransformStamped
 from types import SimpleNamespace
-from std_msgs.msg import Float32
+from std_msgs.msg import Bool, Float32, String
 
 from landerpi_sandbox_display.sandbox_display_node import (
     SandboxDisplayNode,
@@ -120,3 +120,127 @@ def test_position_error_callback_updates_display_state():
         )
 
         assert state.position_error == 0.123
+
+def test_navigation_status_callback_updates_display_state():
+    class FakeNavigationState:
+        def __init__(self):
+            self.navigation_status = None
+
+        def update_navigation_status(self, status):
+            self.navigation_status = status
+
+    state = FakeNavigationState()
+
+    fake_node = SimpleNamespace(
+        display_state=state,
+    )
+
+    msg = String()
+    msg.data = 'navigating'
+
+    SandboxDisplayNode.navigation_status_callback(
+        fake_node,
+        msg,
+    )
+
+    assert state.navigation_status == 'navigating'
+
+
+def test_arrival_status_callback_updates_display_state():
+    class FakeArrivalState:
+        def __init__(self):
+            self.arrival_status = None
+
+        def update_arrival_status(self, arrived):
+            self.arrival_status = arrived
+
+    state = FakeArrivalState()
+
+    fake_node = SimpleNamespace(
+        display_state=state,
+    )
+
+    msg = Bool()
+    msg.data = True
+
+    SandboxDisplayNode.arrival_status_callback(
+        fake_node,
+        msg,
+    )
+
+    assert state.arrival_status is True
+
+def test_navigation_status_starts_task_timer():
+    class FakeState:
+        def update_navigation_status(self, status):
+            self.navigation_status = status
+
+    state = FakeState()
+
+    fake_node = SimpleNamespace(
+        display_state=state,
+        task_running=False,
+        task_start_time=None,
+    )
+
+    msg = String()
+    msg.data = 'navigating'
+
+    SandboxDisplayNode.navigation_status_callback(
+        fake_node,
+        msg,
+    )
+
+    assert fake_node.task_running is True
+    assert fake_node.task_start_time is not None
+
+
+def test_arrival_status_stops_task_timer():
+    class FakeState:
+        def update_arrival_status(self, arrived):
+            self.arrival_status = arrived
+
+        def update_task_time(self, task_time):
+            self.task_time = task_time
+
+    state = FakeState()
+
+    fake_node = SimpleNamespace(
+        display_state=state,
+        task_running=True,
+        task_start_time=10.0,
+    )
+
+    msg = Bool()
+    msg.data = True
+
+    SandboxDisplayNode.arrival_status_callback(
+        fake_node,
+        msg,
+    )
+
+    assert fake_node.task_running is False
+
+
+def test_task_timer_updates_display_state():
+    class FakeState:
+        def __init__(self):
+            self.task_time = None
+
+        def update_task_time(self, task_time):
+            self.task_time = task_time
+
+    state = FakeState()
+
+    fake_node = SimpleNamespace(
+        display_state=state,
+        task_running=True,
+        task_start_time=10.0,
+    )
+
+    SandboxDisplayNode.update_task_time(
+        fake_node,
+        current_time=22.5,
+    )
+
+    assert state.task_time == 12.5

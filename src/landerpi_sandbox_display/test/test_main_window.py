@@ -457,3 +457,52 @@ def test_refresh_from_state_displays_position_error():
     assert window.position_error_value.text() == '0.123 m'
 
     window.close()
+
+def test_refresh_from_state_displays_navigation_status():
+    app = QApplication.instance()
+
+    if app is None:
+        app = QApplication([])
+
+    window = MainWindow()
+    state = DisplayState()
+
+    state.update_navigation_status(
+        'navigating'
+    )
+
+    window.refresh_from_state(
+        state
+    )
+
+    assert (
+        window.navigation_status_value.text()
+        == 'Navigating'
+    )
+
+    window.close()
+
+
+def test_refresh_from_state_displays_arrival_status():
+    app = QApplication.instance()
+
+    if app is None:
+        app = QApplication([])
+
+    window = MainWindow()
+    state = DisplayState()
+
+    state.update_arrival_status(
+        True
+    )
+
+    window.refresh_from_state(
+        state
+    )
+
+    assert (
+        window.arrival_status_value.text()
+        == 'Arrived'
+    )
+
+    window.close()

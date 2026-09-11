@@ -68,3 +68,59 @@ def test_display_state_tracks_position_error():
 
     assert snapshot.values['position_error'] == 0.123
     assert snapshot.revisions['position_error'] == 1
+
+def test_display_state_tracks_navigation_status():
+    state = DisplayState()
+
+    state.update_navigation_status(
+        'navigating'
+    )
+
+    snapshot = state.snapshot()
+
+    assert (
+        snapshot.values['navigation_status']
+        == 'navigating'
+    )
+    assert (
+        snapshot.revisions['navigation_status']
+        == 1
+    )
+
+
+def test_display_state_tracks_arrival_status():
+    state = DisplayState()
+
+    state.update_arrival_status(
+        False
+    )
+
+    snapshot = state.snapshot()
+
+    assert (
+        snapshot.values['arrival_status']
+        is False
+    )
+    assert (
+        snapshot.revisions['arrival_status']
+        == 1
+    )
+
+
+def test_display_state_tracks_task_time():
+    state = DisplayState()
+
+    state.update_task_time(
+        12.3
+    )
+
+    snapshot = state.snapshot()
+
+    assert (
+        snapshot.values['task_time']
+        == 12.3
+    )
+    assert (
+        snapshot.revisions['task_time']
+        == 1
+    )

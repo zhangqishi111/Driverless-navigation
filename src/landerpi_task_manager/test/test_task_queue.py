@@ -1,9 +1,12 @@
 import math
+from types import SimpleNamespace
 
 import pytest
 import rclpy
-from geometry_msgs.msg import Pose, PoseArray
+from geometry_msgs.msg import Pose, PoseArray, PoseWithCovarianceStamped, Twist
+from action_msgs.msg import GoalStatus
 from landerpi_msgs.msg import NavigationPointState, NavigationTaskState
+from rclpy.qos import DurabilityPolicy, ReliabilityPolicy
 
 from landerpi_task_manager.task_queue import (
     NavigationTaskQueue,
@@ -31,9 +34,18 @@ class CompletedFuture:
 class DeferredFuture:
     def __init__(self):
         self.callback = None
+        self._value = None
 
     def add_done_callback(self, callback):
         self.callback = callback
+
+    def result(self):
+        return self._value
+
+    def resolve(self, value):
+        self._value = value
+        assert self.callback is not None
+        self.callback(self)
 
 
 class AcceptedGoalHandle:
@@ -50,11 +62,32 @@ class AcceptedGoalHandle:
         self.cancel_requested = True
 
 
+class FakeActionClient:
+    def __init__(self):
+        self.requests = []
+        self.response_futures = []
+
+    def server_is_ready(self):
+        return True
+
+    def send_goal_async(self, request):
+        self.requests.append(request)
+        future = DeferredFuture()
+        self.response_futures.append(future)
+        return future
+
+
+class UnavailableActionClient:
+    def server_is_ready(self):
+        return False
+
+
 @pytest.fixture
 def queue():
     if not rclpy.ok():
         rclpy.init()
     node = NavigationTaskQueue()
+    node._task_state_qos = node._task_state.qos_profile
     node._task_state = PublisherCapture()
     node._send_current_goal = lambda: None
     node._now = lambda: 10_000_000_000
@@ -292,3 +325,107 @@ def test_localization_loss_fails_current_point_and_stops_later_goals(queue):
         NavigationPointState.NOT_EXECUTED,
     ]
     assert queue._task_state.messages[-1].state == NavigationTaskState.FAILED
+
+
+def test_three_point_sequence_waits_for_stop_and_never_skips_failed_point(queue):
+    clock = SimpleNamespace(now_ns=10_000_000_000)
+    queue._now = lambda: clock.now_ns
+    queue._last_localization_ns = clock.now_ns
+    queue._latest_amcl_xy = (1.0, 2.0)
+    queue._client = FakeActionClient()
+    queue._send_current_goal = NavigationTaskQueue._send_current_goal.__get__(
+        queue, NavigationTaskQueue)
+
+    queue._on_goals(make_goal_array(3))
+    assert [request.pose.pose.position.x
+            for request in queue._client.requests] == [1.0]
+
+    first_handle = AcceptedGoalHandle()
+    queue._client.response_futures[0].resolve(first_handle)
+    clock.now_ns = 10_500_000_000
+    queue._last_localization_ns = clock.now_ns
+    first_handle.result_future.resolve(
+        SimpleNamespace(status=GoalStatus.STATUS_SUCCEEDED))
+    zero_velocity = Twist()
+    queue._on_velocity(zero_velocity)
+
+    clock.now_ns = 10_990_000_000
+    queue._last_localization_ns = clock.now_ns
+    queue._on_velocity(zero_velocity)
+    queue._monitor()
+    assert len(queue._client.requests) == 1
+
+    clock.now_ns = 11_000_000_000
+    queue._last_localization_ns = clock.now_ns
+    queue._on_velocity(zero_velocity)
+    queue._monitor()
+    assert [request.pose.pose.position.x
+            for request in queue._client.requests] == [1.0, 2.0]
+
+    second_handle = AcceptedGoalHandle()
+    queue._client.response_futures[1].resolve(second_handle)
+    clock.now_ns = 11_400_000_000
+    queue._last_localization_ns = clock.now_ns
+    second_handle.result_future.resolve(
+        SimpleNamespace(status=GoalStatus.STATUS_ABORTED))
+
+    assert len(queue._client.requests) == 2
+    final_snapshot = queue._task_state.messages[-1]
+    assert final_snapshot.active is False
+    assert final_snapshot.current_index == 2
+    assert [point.state for point in final_snapshot.points] == [
+        NavigationPointState.SUCCEEDED,
+        NavigationPointState.FAILED,
+        NavigationPointState.NOT_EXECUTED,
+    ]
+
+
+def test_task_state_publisher_is_reliable_and_transient_local(queue):
+    assert queue._task_state_qos.reliability == ReliabilityPolicy.RELIABLE
+    assert queue._task_state_qos.durability == DurabilityPolicy.TRANSIENT_LOCAL
+
+
+def test_excessive_localization_covariance_rejects_submission(queue):
+    localization = PoseWithCovarianceStamped()
+    localization.header.frame_id = 'map'
+    localization.pose.pose.orientation.w = 1.0
+    localization.pose.covariance[0] = 0.30
+
+    queue._on_amcl_pose(localization)
+    queue._on_goals(make_goal_array(2))
+
+    snapshot = queue._task_state.messages[-1]
+    assert snapshot.state == NavigationTaskState.REJECTED
+    assert 'position variance' in snapshot.detail
+
+
+def test_unavailable_nav2_server_fails_first_point_without_dispatch(queue):
+    queue._client = UnavailableActionClient()
+    queue._send_current_goal = NavigationTaskQueue._send_current_goal.__get__(
+        queue, NavigationTaskQueue)
+
+    queue._on_goals(make_goal_array(2))
+
+    snapshot = queue._task_state.messages[-1]
+    assert snapshot.active is False
+    assert [point.state for point in snapshot.points] == [
+        NavigationPointState.FAILED,
+        NavigationPointState.NOT_EXECUTED,
+    ]
+    assert 'not ready' in snapshot.detail
+
+
+def test_stop_confirmation_timeout_fails_and_blocks_later_points(queue):
+    prepare_waiting_for_stop(queue)
+    queue._now = lambda: 13_000_000_001
+    queue._last_localization_ns = 13_000_000_001
+
+    queue._monitor()
+
+    snapshot = queue._task_state.messages[-1]
+    assert snapshot.active is False
+    assert [point.state for point in snapshot.points] == [
+        NavigationPointState.FAILED,
+        NavigationPointState.NOT_EXECUTED,
+    ]
+    assert snapshot.detail == 'zero-velocity confirmation timed out'

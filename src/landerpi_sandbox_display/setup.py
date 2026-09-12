@@ -11,6 +11,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
     ],
     install_requires=['setuptools'],
+    tests_require=['pytest'],
     zip_safe=True,
     maintainer='LanderPi Team',
     maintainer_email='team@example.com',
@@ -22,4 +23,3 @@ setup(
         ],
     },
 )
-

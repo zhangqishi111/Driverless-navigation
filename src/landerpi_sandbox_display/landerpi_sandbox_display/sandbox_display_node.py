@@ -1,10 +1,11 @@
 import math
 import sys
+import time
 
 import rclpy
 
 from nav_msgs.msg import Path
-from std_msgs.msg import Float32
+from std_msgs.msg import Bool, Empty, Float32, String
 
 from threading import Thread
 
@@ -22,7 +23,8 @@ from tf2_geometry_msgs import (
     do_transform_pose_stamped,
 )
 
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import Pose, PoseArray, PoseStamped
+from landerpi_msgs.msg import NavigationTaskState
 from nav_msgs.msg import OccupancyGrid, Path
 
 from PyQt5.QtCore import QTimer
@@ -39,6 +41,7 @@ from rclpy.qos import (
 from landerpi_sandbox_display.main_window import MainWindow
 from landerpi_sandbox_display.coordinate_transform import CoordinateTransform
 from landerpi_sandbox_display.map_widget import MapWidget
+from landerpi_sandbox_display.task_draft import yaw_to_quaternion
 
 
 class SandboxDisplayNode(Node):
@@ -84,7 +87,10 @@ class SandboxDisplayNode(Node):
             actual_path_qos,
         )
 
-        # 保存实际轨迹
+        # =========================
+        # Actual Path
+        # =========================
+
         self.actual_path = Path()
         self.actual_path.header.frame_id = 'map'
 
@@ -97,8 +103,6 @@ class SandboxDisplayNode(Node):
         # UI 最多绘制 800 个 Actual Path 点
         self.actual_path_display_max_points = 800
 
-        # 新轨迹点产生后，只标记 dirty，
-        # 不在高频 TF callback 中直接发布/绘制整条轨迹。
         self.actual_path_ui_dirty = False
         self.actual_path_publish_dirty = False
 
@@ -114,6 +118,23 @@ class SandboxDisplayNode(Node):
             self.publish_actual_path_if_dirty,
         )
 
+        # =========================
+        # Task Time
+        # =========================
+
+        self.task_running = False
+        self.task_start_time = None
+
+        # 每 0.1 秒刷新一次任务时间
+        self.task_time_timer = self.create_timer(
+            0.1,
+            self.refresh_task_time,
+        )
+
+        # =========================
+        # QoS
+        # =========================
+
         map_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
             depth=1,
@@ -121,13 +142,21 @@ class SandboxDisplayNode(Node):
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
 
+        # =========================
+        # TF
+        # =========================
+
         # 20 Hz 从 TF 获取机器人实时位置
         self.robot_tf_timer = self.create_timer(
             0.05,
             self.update_robot_pose_from_tf,
         )
 
-        # 订阅地图
+        # =========================
+        # Subscriptions
+        # =========================
+
+        # 地图
         self.map_subscription = self.create_subscription(
             OccupancyGrid,
             '/map',
@@ -135,7 +164,7 @@ class SandboxDisplayNode(Node):
             map_qos,
         )
 
-        # 订阅机器人定位位姿
+        # AMCL 机器人定位位姿
         self.robot_pose_subscription = self.create_subscription(
             PoseStamped,
             '/robot_pose',
@@ -143,7 +172,7 @@ class SandboxDisplayNode(Node):
             10,
         )
 
-        # 订阅全局规划路径
+        # 全局规划路径
         self.plan_subscription = self.create_subscription(
             Path,
             '/plan',
@@ -151,7 +180,7 @@ class SandboxDisplayNode(Node):
             10,
         )
 
-        # 订阅局部规划路径
+        # 局部规划路径
         self.local_plan_subscription = self.create_subscription(
             Path,
             '/local_plan',
@@ -159,7 +188,7 @@ class SandboxDisplayNode(Node):
             10,
         )
 
-        # 订阅机器人当前位置与目标之间的 XY 位置误差
+        # 位置误差
         self.position_error_subscription = self.create_subscription(
             Float32,
             '/position_error',
@@ -167,10 +196,48 @@ class SandboxDisplayNode(Node):
             10,
         )
 
-        # 发布导航目标
+        # 第四周：导航状态
+        self.navigation_status_subscription = self.create_subscription(
+            String,
+            '/navigation_status',
+            self.navigation_status_callback,
+            10,
+        )
+
+        # 第四周：到达状态
+        self.arrival_status_subscription = self.create_subscription(
+            Bool,
+            '/arrival_status',
+            self.arrival_status_callback,
+            10,
+        )
+
+        self.navigation_task_state_subscription = self.create_subscription(
+            NavigationTaskState,
+            '/navigation_task/state',
+            self.navigation_task_state_callback,
+            map_qos,
+        )
+
+        # =========================
+        # Publishers
+        # =========================
+
         self.goal_pose_publisher = self.create_publisher(
             PoseStamped,
             '/goal_pose',
+            10,
+        )
+
+        self.navigation_task_publisher = self.create_publisher(
+            PoseArray,
+            '/navigation_task/goals',
+            10,
+        )
+
+        self.navigation_task_cancel_publisher = self.create_publisher(
+            Empty,
+            '/navigation_task/cancel',
             10,
         )
 
@@ -178,8 +245,12 @@ class SandboxDisplayNode(Node):
 
         self.get_logger().info(
             'Sandbox display node started. '
-            'Waiting for /map and /robot_pose...'
+            'Waiting for /map and navigation data...'
         )
+
+    # =========================================================
+    # Goal
+    # =========================================================
 
     def publish_goal_pose(self, x, y):
         msg = PoseStamped()
@@ -191,7 +262,7 @@ class SandboxDisplayNode(Node):
         msg.pose.position.y = float(y)
         msg.pose.position.z = 0.0
 
-        # V0.8 暂时默认目标朝向 yaw = 0
+        # 暂时默认目标朝向 yaw = 0
         msg.pose.orientation.x = 0.0
         msg.pose.orientation.y = 0.0
         msg.pose.orientation.z = 0.0
@@ -204,17 +275,201 @@ class SandboxDisplayNode(Node):
             f'x={x:.3f}, y={y:.3f}, yaw=0.000'
         )
 
+    def publish_navigation_task(self, goals):
+        goals = tuple(goals)
+        if len(goals) < 1 or len(goals) > 3:
+            return False
+        if not all(
+                math.isfinite(value)
+                for goal in goals
+                for value in (goal.x, goal.y, goal.yaw)):
+            return False
+
+        message = PoseArray()
+        message.header.stamp = self.get_clock().now().to_msg()
+        message.header.frame_id = 'map'
+        for goal in goals:
+            pose = Pose()
+            pose.position.x = float(goal.x)
+            pose.position.y = float(goal.y)
+            pose.position.z = 0.0
+            quaternion = yaw_to_quaternion(float(goal.yaw))
+            pose.orientation.x = quaternion[0]
+            pose.orientation.y = quaternion[1]
+            pose.orientation.z = quaternion[2]
+            pose.orientation.w = quaternion[3]
+            message.poses.append(pose)
+
+        self.navigation_task_publisher.publish(message)
+        return True
+
+    def cancel_navigation_task(self):
+        self.navigation_task_cancel_publisher.publish(Empty())
+
+    def navigation_task_state_callback(self, message):
+        self.display_state.update_navigation_task_state(message)
+
+    # =========================================================
+    # Position Error
+    # =========================================================
+
     def position_error_callback(self, msg):
         """
-        接收导航模块发布的 /position_error。
+        接收 /position_error。
 
-        /position_error 类型为 std_msgs/msg/Float32，
-        表示机器人当前位置到最新有效目标点之间的
-        map 坐标系 XY 欧氏距离，单位为米。
+        std_msgs/msg/Float32
+        当前机器人到目标点的 XY 欧氏距离，单位 m。
         """
         self.display_state.update_position_error(
             float(msg.data)
         )
+
+    # =========================================================
+    # Navigation Status
+    # =========================================================
+
+    def navigation_status_callback(self, msg):
+        """
+        接收 /navigation_status。
+
+        planning / navigating 时启动任务计时。
+        终止状态出现时停止计时。
+        """
+        status = str(msg.data).strip()
+
+        self.display_state.update_navigation_status(
+            status
+        )
+
+        normalized_status = status.lower()
+
+        if normalized_status in (
+                'planning',
+                'navigating',
+        ):
+            if not getattr(
+                    self,
+                    'task_running',
+                    False,
+            ):
+                self.task_running = True
+                self.task_start_time = (
+                    time.monotonic()
+                )
+
+        terminal_keywords = (
+            'arrived',
+            'failed',
+            'failure',
+            'rejected',
+            'aborted',
+            'canceled',
+            'cancelled',
+        )
+
+        if any(
+                keyword in normalized_status
+                for keyword in terminal_keywords
+        ):
+            if getattr(
+                    self,
+                    'task_running',
+                    False,
+            ):
+                self.update_task_time()
+                self.task_running = False
+
+    # =========================================================
+    # Arrival Status
+    # =========================================================
+
+    def arrival_status_callback(self, msg):
+        """
+        接收 /arrival_status。
+
+        True 表示成功到达目标，
+        同时停止任务计时。
+        """
+        arrived = bool(msg.data)
+
+        self.display_state.update_arrival_status(
+            arrived
+        )
+
+        if (
+                arrived
+                and getattr(
+            self,
+            'task_running',
+            False,
+        )
+                and getattr(
+            self,
+            'task_start_time',
+            None,
+        ) is not None
+        ):
+            current_time = time.monotonic()
+
+            elapsed = max(
+                0.0,
+                current_time
+                - self.task_start_time,
+            )
+
+            self.display_state.update_task_time(
+                elapsed
+            )
+
+            self.task_running = False
+
+    # =========================================================
+    # Task Time
+    # =========================================================
+
+    def update_task_time(
+            self,
+            current_time=None,
+    ):
+        """
+        根据任务开始时间计算已经运行的秒数。
+
+        current_time 参数主要用于测试；
+        正常运行时使用 time.monotonic()。
+        """
+        if not self.task_running:
+            return
+
+        if self.task_start_time is None:
+            return
+
+        if current_time is None:
+            current_time = time.monotonic()
+
+        elapsed = max(
+            0.0,
+            float(current_time)
+            - float(self.task_start_time),
+        )
+
+        self.display_state.update_task_time(
+            elapsed
+        )
+
+    def refresh_task_time(self):
+        """
+        ROS Timer 周期调用。
+
+        导航任务运行期间持续刷新 Task Time。
+        """
+        if not self.task_running:
+            return
+
+        self.update_task_time()
+
+    # =========================================================
+    # Robot Pose
+    # =========================================================
 
     def robot_pose_callback(self, msg):
         if msg.header.frame_id != 'map':
@@ -224,11 +479,14 @@ class SandboxDisplayNode(Node):
             )
             return
 
-        # /robot_pose 保留作为 AMCL 统一接口。
-        # 不再直接驱动实时机器人绘制。
+        # /robot_pose 保留作为 AMCL 统一接口
         self.display_state.update_amcl_pose(
             msg
         )
+
+    # =========================================================
+    # Actual Path
+    # =========================================================
 
     def update_actual_path(self, msg):
         x = msg.pose.position.x
@@ -238,13 +496,20 @@ class SandboxDisplayNode(Node):
 
         if self.last_actual_x is None:
             should_record = True
+
         else:
             dx = x - self.last_actual_x
             dy = y - self.last_actual_y
 
-            distance = math.hypot(dx, dy)
+            distance = math.hypot(
+                dx,
+                dy,
+            )
 
-            if distance >= self.actual_path_min_distance:
+            if (
+                    distance
+                    >= self.actual_path_min_distance
+            ):
                 should_record = True
 
         if not should_record:
@@ -265,8 +530,6 @@ class SandboxDisplayNode(Node):
         self.last_actual_x = x
         self.last_actual_y = y
 
-        # 只做标记。
-        # 真正的 UI 刷新和 DDS 发布由低频 timer 完成。
         self.actual_path_ui_dirty = True
         self.actual_path_publish_dirty = True
 
@@ -299,7 +562,7 @@ class SandboxDisplayNode(Node):
             self.get_clock().now().to_msg()
         )
 
-        # 没有外部订阅者时，不做整条 Path 的 DDS 序列化。
+        # 没有外部订阅者时不进行整条 Path DDS 序列化
         if (
                 self.actual_path_publisher
                 .get_subscription_count()
@@ -310,6 +573,10 @@ class SandboxDisplayNode(Node):
             )
 
         self.actual_path_publish_dirty = False
+
+    # =========================================================
+    # Global Plan
+    # =========================================================
 
     def plan_callback(self, msg):
         if msg.header.frame_id != 'map':
@@ -322,6 +589,10 @@ class SandboxDisplayNode(Node):
         self.display_state.update_global_plan(
             msg
         )
+
+    # =========================================================
+    # Local Plan
+    # =========================================================
 
     def local_plan_callback(self, msg):
         if msg.header.frame_id == 'map':
@@ -362,6 +633,14 @@ class SandboxDisplayNode(Node):
             map_path
         )
 
+        callback = getattr(self, 'local_plan_update_callback', None)
+        if callback is not None:
+            callback(map_path)
+
+    # =========================================================
+    # Map
+    # =========================================================
+
     def map_callback(self, msg):
         info = msg.info
 
@@ -373,21 +652,31 @@ class SandboxDisplayNode(Node):
             info.origin.position.y,
         )
 
-        if map_signature != self._last_map_signature:
-            self._last_map_signature = map_signature
+        if (
+                map_signature
+                != self._last_map_signature
+        ):
+            self._last_map_signature = (
+                map_signature
+            )
 
             self.get_logger().info(
                 f'Received /map: '
                 f'frame={msg.header.frame_id}, '
                 f'size={info.width}x{info.height}, '
                 f'resolution={info.resolution:.3f} m/cell, '
-                f'origin=({info.origin.position.x:.3f}, '
+                f'origin=('
+                f'{info.origin.position.x:.3f}, '
                 f'{info.origin.position.y:.3f})'
             )
 
         self.display_state.update_map(
             msg
         )
+
+    # =========================================================
+    # TF Robot Pose
+    # =========================================================
 
     def update_robot_pose_from_tf(self):
         try:
@@ -415,6 +704,10 @@ class SandboxDisplayNode(Node):
         )
 
 
+# =============================================================
+# Helpers
+# =============================================================
+
 def downsample_poses(
         poses,
         max_points=800,
@@ -441,10 +734,16 @@ def downsample_poses(
     ]
 
 
-def transform_path(path_msg, transform):
+def transform_path(
+        path_msg,
+        transform,
+):
     transformed_path = Path()
 
-    transformed_path.header = path_msg.header
+    transformed_path.header = (
+        path_msg.header
+    )
+
     transformed_path.header.frame_id = (
         transform.header.frame_id
     )
@@ -460,7 +759,9 @@ def transform_path(path_msg, transform):
     return transformed_path
 
 
-def transform_to_pose_stamped(transform):
+def transform_to_pose_stamped(
+        transform,
+):
     pose = PoseStamped()
 
     pose.header = transform.header
@@ -488,10 +789,16 @@ def create_main_window():
     return MainWindow()
 
 
+# =============================================================
+# Main
+# =============================================================
+
 def main(args=None):
     rclpy.init(args=args)
 
-    app = QApplication(sys.argv)
+    app = QApplication(
+        sys.argv
+    )
 
     window = create_main_window()
 
@@ -505,10 +812,22 @@ def main(args=None):
         node.publish_goal_pose
     )
 
-    # ROS 使用独立 Executor。
-    # ROS callback 不再依赖 Qt 主线程处理。
-    executor = SingleThreadedExecutor()
-    executor.add_node(node)
+    window.set_task_publish_callback(
+        node.publish_navigation_task
+    )
+
+    window.set_task_cancel_callback(
+        node.cancel_navigation_task
+    )
+
+    # ROS 使用独立 Executor
+    executor = (
+        SingleThreadedExecutor()
+    )
+
+    executor.add_node(
+        node
+    )
 
     ros_thread = Thread(
         target=executor.spin,
@@ -517,16 +836,19 @@ def main(args=None):
 
     ros_thread.start()
 
-    # Qt 只负责每 50ms 读取一次“最新状态”。
+    # Qt 每 50ms 获取最新状态
     ui_timer = QTimer()
 
     ui_timer.timeout.connect(
-        lambda: window.refresh_from_state(
+        lambda:
+        window.refresh_from_state(
             display_state
         )
     )
 
-    ui_timer.start(50)
+    ui_timer.start(
+        50
+    )
 
     window.show()
 
@@ -544,7 +866,9 @@ def main(args=None):
 
     rclpy.shutdown()
 
-    sys.exit(exit_code)
+    sys.exit(
+        exit_code
+    )
 
 
 if __name__ == '__main__':

@@ -251,10 +251,23 @@ global_costmap:
       footprint: "[[0.135, 0.105], [0.135, -0.105], [-0.135, -0.105], [-0.135, 0.105]]"
       resolution: 0.05
       track_unknown_space: true
-      # The static map provides global routing.  Dynamic laser returns remain
-      # in the local costmap, where they can be safely handled by the local
-      # controller without falsely disconnecting distant global goals.
-      plugins: ["static_layer", "inflation_layer"]
+      # Replanning must see the same live obstacles as the local controller.
+      # Keep clearing enabled so routes reopen after an obstacle moves away.
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: scan
+        scan:
+          topic: /scan
+          max_obstacle_height: 2.0
+          clearing: True
+          marking: True
+          data_type: "LaserScan"
+          raytrace_max_range: 3.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 2.5
+          obstacle_min_range: 0.0
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True

@@ -388,7 +388,7 @@ class MainWindow(QMainWindow):
         )
 
         connection_label = QLabel(
-            '● Connected'
+            '● ROS display'
         )
 
         header_layout.addWidget(
@@ -866,7 +866,16 @@ class MainWindow(QMainWindow):
         goals = self.task_draft.goals()
         if self._task_active or not goals or self.task_publish_callback is None:
             return
-        self.task_publish_callback(goals)
+        if self.task_publish_callback(goals) is False:
+            self.task_summary_value.setText('Not submitted · task receiver unavailable')
+            self.task_summary_value.setToolTip(
+                'No task receiver is connected or the draft is invalid. '
+                'Start navigation_task_queue, then submit again. Draft retained.')
+            return
+        self.task_summary_value.setText('Submitted · waiting for task state')
+        self.task_summary_value.setToolTip(
+            'Waiting for /navigation_task/state from the task queue. '
+            'If this persists, check that display and navigation use matching versions.')
 
     def cancel_navigation_task(self):
         if (not self._task_active or self._cancel_pending or

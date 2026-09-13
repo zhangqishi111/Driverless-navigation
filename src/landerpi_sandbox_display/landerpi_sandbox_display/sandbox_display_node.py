@@ -276,6 +276,11 @@ class SandboxDisplayNode(Node):
         )
 
     def publish_navigation_task(self, goals):
+        if self.navigation_task_publisher.get_subscription_count() == 0:
+            self.get_logger().error(
+                'Task not submitted: no subscriber on /navigation_task/goals. '
+                'Start navigation_task_queue from the matching workspace.')
+            return False
         goals = tuple(goals)
         if len(goals) < 1 or len(goals) > 3:
             return False

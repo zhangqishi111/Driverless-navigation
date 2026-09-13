@@ -10,10 +10,10 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node, SetRemap
+from launch_ros.actions import Node
 
 
 def generate_launch_description():
@@ -29,6 +29,8 @@ def generate_launch_description():
     params_file = LaunchConfiguration('params_file')
     autostart = LaunchConfiguration('autostart')
     task_stop_velocity_topic = LaunchConfiguration('task_stop_velocity_topic')
+    task_max_position_variance = LaunchConfiguration(
+        'task_max_position_variance')
 
     nav2 = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -49,16 +51,6 @@ def generate_launch_description():
         }.items(),
     )
 
-    # Nav2's stock navigation launch feeds the velocity smoother's output to
-    # ``/cmd_vel``.  The vendor odom/controller node also subscribes directly
-    # to that topic, bypassing our safety adapter and receiving a second copy
-    # of every navigation command.  Scope a remap around Nav2 so the smoother
-    # publishes only to the adapter's dedicated input topic.
-    nav2_with_dedicated_output = GroupAction([
-        SetRemap(src='cmd_vel_smoothed', dst='cmd_vel_nav_output'),
-        nav2,
-    ])
-
     return LaunchDescription([
         DeclareLaunchArgument(
             'use_sim_time', default_value='true',
@@ -73,9 +65,12 @@ def generate_launch_description():
             'autostart', default_value='true',
             description='Transition Nav2 lifecycle nodes to active automatically.'),
         DeclareLaunchArgument(
-            'task_stop_velocity_topic', default_value='/cmd_vel_nav_output',
+            'task_stop_velocity_topic', default_value='/cmd_vel',
             description='Velocity topic used to prove a task waypoint has stopped.'),
-        nav2_with_dedicated_output,
+        DeclareLaunchArgument(
+            'task_max_position_variance', default_value='0.50',
+            description='Maximum AMCL position variance accepted for a task.'),
+        nav2,
         Node(
             package='landerpi_task_manager',
             executable='navigation_command_arbiter',
@@ -105,6 +100,7 @@ def generate_launch_description():
             parameters=[{
                 'use_sim_time': use_sim_time,
                 'stop_velocity_topic': task_stop_velocity_topic,
+                'max_position_variance': task_max_position_variance,
             }],
         ),
     ])

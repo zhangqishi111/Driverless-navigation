@@ -36,6 +36,8 @@ def generate_launch_description():
                 'autostart': 'true',
                 # On the vehicle, verify the command after the safety adapter.
                 'task_stop_velocity_topic': '/controller/cmd_vel',
+                # Keep the stricter localization gate on physical hardware.
+                'task_max_position_variance': '0.25',
             }.items(),
         ),
     ])

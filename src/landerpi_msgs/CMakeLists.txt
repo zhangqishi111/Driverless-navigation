@@ -7,8 +7,8 @@ find_package(std_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
-  "msg/NavigationPointState.msg"
-  "msg/NavigationTaskState.msg"
+  "msg/NavigationPointState.idl"
+  "msg/NavigationTaskState.idl"
   DEPENDENCIES geometry_msgs std_msgs
 )
 

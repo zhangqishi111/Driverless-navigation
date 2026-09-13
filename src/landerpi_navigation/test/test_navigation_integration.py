@@ -77,7 +77,11 @@ def test_ui_reports_failed_submission_and_keeps_draft():
     assert 'waiting for task state' in labels[-1]
 
 
-def test_task_state_uses_local_message_type_without_package_prefix():
-    message = (SRC / 'landerpi_msgs/msg/NavigationTaskState.msg').read_text(encoding='utf-8')
-    assert 'NavigationPointState[] points' in message
-    assert 'landerpi_msgs/NavigationPointState' not in message
+def test_task_interfaces_use_native_idl_to_avoid_humble_adapter_failure():
+    cmake = (SRC / 'landerpi_msgs/CMakeLists.txt').read_text(encoding='utf-8')
+    task = (SRC / 'landerpi_msgs/msg/NavigationTaskState.idl').read_text(encoding='utf-8')
+    assert '"msg/NavigationPointState.idl"' in cmake
+    assert '"msg/NavigationTaskState.idl"' in cmake
+    assert '.msg"' not in cmake
+    assert '#include "landerpi_msgs/msg/NavigationPointState.idl"' in task
+    assert 'sequence<landerpi_msgs::msg::NavigationPointState> points;' in task

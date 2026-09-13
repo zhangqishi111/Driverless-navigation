@@ -3,10 +3,17 @@ from types import SimpleNamespace
 
 import pytest
 import rclpy
-from geometry_msgs.msg import Pose, PoseArray, PoseWithCovarianceStamped, Twist
+from geometry_msgs.msg import (
+    Pose,
+    PoseArray,
+    PoseWithCovarianceStamped,
+    TransformStamped,
+    Twist,
+)
 from action_msgs.msg import GoalStatus
 from landerpi_msgs.msg import NavigationPointState, NavigationTaskState
 from rclpy.qos import DurabilityPolicy, ReliabilityPolicy
+from tf2_msgs.msg import TFMessage
 
 from landerpi_task_manager.task_queue import (
     NavigationTaskQueue,
@@ -123,6 +130,13 @@ def make_goal_array(count):
     return goals
 
 
+def test_amcl_subscription_receives_transient_local_last_pose(queue):
+    qos = queue._amcl_subscription.qos_profile
+
+    assert qos.reliability == ReliabilityPolicy.RELIABLE
+    assert qos.durability == DurabilityPolicy.TRANSIENT_LOCAL
+
+
 def test_success_records_arrival_error_elapsed_time_and_zero_retries():
     record = PointRecord(index=1, target=make_pose())
 
@@ -207,6 +221,21 @@ def test_accepting_goals_creates_an_ordered_authoritative_snapshot(queue):
         NavigationPointState.PENDING,
         NavigationPointState.PENDING,
     ]
+
+
+def test_fresh_amcl_tf_keeps_stationary_localization_healthy(queue):
+    queue._last_localization_ns = 8_000_000_000
+    queue._latest_amcl_xy = (0.0, 0.0)
+    queue._last_localization_tf_ns = None
+
+    transform = TransformStamped()
+    transform.header.frame_id = 'map'
+    transform.child_frame_id = 'odom'
+    callback = getattr(queue, '_on_localization_tf', lambda _message: None)
+    callback(TFMessage(transforms=[transform]))
+
+    assert queue._last_localization_tf_ns == 10_000_000_000
+    assert queue._localization_is_healthy(10_000_000_000) is True
 
 
 def test_terminal_failure_keeps_results_and_blocks_every_later_point(queue):

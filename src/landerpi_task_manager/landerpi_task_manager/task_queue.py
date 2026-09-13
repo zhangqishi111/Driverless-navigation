@@ -15,6 +15,7 @@ from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Bool, Empty, String, UInt8
+from tf2_msgs.msg import TFMessage
 
 
 @dataclass
@@ -131,8 +132,10 @@ class NavigationTaskQueue(Node):
         self._client = ActionClient(self, NavigateToPose, '/navigation_command')
         self.create_subscription(PoseArray, '/navigation_task/goals', self._on_goals, 10)
         self.create_subscription(Empty, '/navigation_task/cancel', self._on_cancel, 10)
+        self._amcl_subscription = self.create_subscription(
+            PoseWithCovarianceStamped, '/amcl_pose', self._on_amcl_pose, latched)
         self.create_subscription(
-            PoseWithCovarianceStamped, '/amcl_pose', self._on_amcl_pose, 10)
+            TFMessage, '/tf', self._on_localization_tf, 10)
         self.create_subscription(
             Twist, self.get_parameter('stop_velocity_topic').value, self._on_velocity, 10)
         self.create_subscription(
@@ -149,6 +152,7 @@ class NavigationTaskQueue(Node):
         self._goal_handle = None
         self._goal_pending = False
         self._last_localization_ns: Optional[int] = None
+        self._last_localization_tf_ns: Optional[int] = None
         self._localization_error = 'no AMCL pose received'
         self._stop_started_ns: Optional[int] = None
         self._last_velocity_ns: Optional[int] = None
@@ -274,8 +278,18 @@ class NavigationTaskQueue(Node):
             )
         else:
             self._last_localization_ns = None
+            self._last_localization_tf_ns = None
             self._localization_error = error
             self._latest_amcl_xy = None
+
+    def _on_localization_tf(self, message: TFMessage) -> None:
+        if self._last_localization_ns is None or self._latest_amcl_xy is None:
+            return
+        for transform in message.transforms:
+            if (transform.header.frame_id == 'map'
+                    and transform.child_frame_id == 'odom'):
+                self._last_localization_tf_ns = self._now()
+                return
 
     def _localization_error_for(
             self, message: PoseWithCovarianceStamped) -> Optional[str]:
@@ -310,7 +324,10 @@ class NavigationTaskQueue(Node):
     def _localization_is_healthy(self, now: int) -> bool:
         if self._last_localization_ns is None:
             return False
-        if now - self._last_localization_ns > self._localization_timeout_ns:
+        freshest_ns = self._last_localization_ns
+        if self._last_localization_tf_ns is not None:
+            freshest_ns = max(freshest_ns, self._last_localization_tf_ns)
+        if now - freshest_ns > self._localization_timeout_ns:
             self._localization_error = 'AMCL pose timed out'
             return False
         return True

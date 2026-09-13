@@ -13,4 +13,4 @@ uint8 total_points
 uint8 state
 float32 elapsed_time_s
 string detail
-landerpi_msgs/NavigationPointState[] points
+NavigationPointState[] points

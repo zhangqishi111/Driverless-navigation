@@ -75,3 +75,9 @@ def test_ui_reports_failed_submission_and_keeps_draft():
     window.task_publish_callback = lambda submitted: True
     namespace['submit_navigation_task'](window)
     assert 'waiting for task state' in labels[-1]
+
+
+def test_task_state_uses_local_message_type_without_package_prefix():
+    message = (SRC / 'landerpi_msgs/msg/NavigationTaskState.msg').read_text(encoding='utf-8')
+    assert 'NavigationPointState[] points' in message
+    assert 'landerpi_msgs/NavigationPointState' not in message

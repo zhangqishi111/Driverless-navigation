@@ -53,6 +53,25 @@ def test_launch_contains_complete_multi_goal_backend():
     assert "PoseArray, '/navigation_task/goals'" in queue
 
 
+def test_arbiter_does_not_cancel_its_timer_inside_timer_callback():
+    source = (SRC / 'landerpi_task_manager/landerpi_task_manager/command_arbiter.py').read_text(
+        encoding='utf-8')
+    tree = ast.parse(source)
+    arbiter = next(
+        node for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == 'NavigationCommandArbiter')
+    finish = next(
+        node for node in arbiter.body
+        if isinstance(node, ast.FunctionDef) and node.name == '_finish_startup_cleanup')
+    calls = [node for node in ast.walk(finish) if isinstance(node, ast.Call)]
+    assert not any(
+        isinstance(call.func, ast.Attribute)
+        and call.func.attr == 'cancel'
+        and isinstance(call.func.value, ast.Attribute)
+        and call.func.value.attr == '_startup_timer'
+        for call in calls)
+
+
 def test_ui_reports_failed_submission_and_keeps_draft():
     source = (SRC / 'landerpi_sandbox_display/landerpi_sandbox_display/main_window.py').read_text(encoding='utf-8')
     tree = ast.parse(source)

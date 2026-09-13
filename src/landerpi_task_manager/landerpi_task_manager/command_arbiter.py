@@ -105,6 +105,11 @@ class NavigationCommandArbiter(Node):
 
     def _ensure_clean_start(self) -> None:
         """Cancel orphaned Nav2 goals before exposing the internal action."""
+        # Humble's rclpy executor can raise ``timer is canceled`` when a timer
+        # cancels itself while its callback is still being dispatched.  Keep
+        # this lightweight timer alive and make subsequent callbacks no-ops.
+        if self._startup_finished or self._shutting_down:
+            return
         if self._startup_cleanup_future is not None:
             return
         if not self._cancel_all_client.service_is_ready():
@@ -182,7 +187,6 @@ class NavigationCommandArbiter(Node):
             cancel_callback=self._on_cancel,
             callback_group=self._callback_group,
         )
-        self._startup_timer.cancel()
         self.get_logger().info(
             'navigation command arbiter ready; startup Nav2 cleanup complete')
 

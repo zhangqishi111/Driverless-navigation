@@ -904,11 +904,19 @@ class MainWindow(QMainWindow):
             NavigationTaskState.REJECTED: 'Rejected',
         }
         task_state = task_states.get(message.state, 'Unknown')
-        self.task_summary_value.setText(
+        summary_text = (
             f'Task {message.task_id} · {task_state} · '
             f'{message.current_index}/{message.total_points} · '
             f'{message.elapsed_time_s:.1f} s')
+        self.task_summary_value.setText(summary_text)
         self.task_summary_value.setToolTip(message.detail)
+
+        if (message.state == NavigationTaskState.REJECTED and
+                not message.points and self.task_draft.goals()):
+            self._refresh_task_draft_view()
+            self.task_summary_value.setText(summary_text)
+            self.task_summary_value.setToolTip(message.detail)
+            return
 
         point_states = {
             NavigationPointState.PENDING: 'Pending',

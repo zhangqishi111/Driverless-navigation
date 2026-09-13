@@ -715,3 +715,26 @@ def test_terminal_snapshot_unlocks_controls_and_keeps_results_visible():
     assert 'Failed' in window.task_summary_value.text()
 
     window.close()
+
+
+def test_rejected_submission_without_point_records_keeps_draft_visible():
+    window = MainWindow()
+    configure_test_map(window)
+    window.multi_goal_mode_button.setChecked(True)
+    click_world(window, 1.0, 1.0)
+    click_world(window, 2.0, 1.0)
+    click_world(window, 2.0, 2.0)
+
+    rejected = NavigationTaskState()
+    rejected.task_id = 13
+    rejected.state = NavigationTaskState.REJECTED
+    rejected.detail = 'AMCL position variance exceeds threshold'
+    window.update_navigation_task_state(rejected)
+
+    assert len(window.task_draft.goals()) == 3
+    assert len(window.map_widget.task_markers) == 3
+    assert window.task_table.item(0, 4).text() == 'Draft'
+    assert 'Rejected' in window.task_summary_value.text()
+    assert window.submit_task_button.isEnabled()
+
+    window.close()

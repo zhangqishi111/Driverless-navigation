@@ -345,15 +345,15 @@ def test_monitor_advances_only_after_fresh_continuous_zero_velocity(queue):
     assert queue._index == 1
 
 
-def test_monitor_does_not_advance_with_stale_velocity(queue):
+def test_monitor_accepts_latched_zero_command_during_settle(queue):
     prepare_waiting_for_stop(queue)
     queue._zero_since_ns = 9_000_000_000
     queue._last_velocity_ns = 9_700_000_000
 
     queue._monitor()
 
-    assert queue._records[0].state == NavigationPointState.WAITING_FOR_STOP
-    assert queue._index == 0
+    assert queue._records[0].state == NavigationPointState.SUCCEEDED
+    assert queue._index == 1
 
 
 def test_localization_loss_fails_current_point_and_stops_later_goals(queue):

@@ -532,13 +532,11 @@ class NavigationTaskQueue(Node):
         if now - self._stop_started_ns > self._stop_timeout_ns:
             self._request_terminal('failed', 'zero-velocity confirmation timed out')
             return
-        missing_velocity = (
-            self._zero_since_ns is None or self._last_velocity_ns is None)
-        stale_velocity = False
-        if self._last_velocity_ns is not None:
-            stale_velocity = (
-                now - self._last_velocity_ns > self._stop_velocity_freshness_ns)
-        if missing_velocity or stale_velocity:
+        # This topic carries commanded velocity rather than measured wheel
+        # speed. A zero command remains desired until another command arrives;
+        # requiring repeated fresh zeros rejects a valid final stop command.
+        # Any later non-zero command clears _zero_since_ns in _on_velocity.
+        if self._zero_since_ns is None or self._last_velocity_ns is None:
             return
         if now - self._zero_since_ns >= self._stop_settle_ns:
             self._advance_or_finish()

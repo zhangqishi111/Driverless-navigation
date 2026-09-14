@@ -187,7 +187,7 @@ controller_server:
       # Prefer trajectories with real clearance; collision checking remains
       # rectangular through ObstacleFootprint, this only changes the ranking
       # of non-colliding candidates.
-      ObstacleFootprint.scale: 0.05
+      ObstacleFootprint.scale: 0.50
       PathAlign.scale: 32.0
       PathAlign.forward_point_distance: 0.1
       GoalAlign.scale: 24.0
@@ -222,7 +222,7 @@ local_costmap:
         # Keep the local field conservative: it is also used by DWB to reject
         # sampled manoeuvres, so widening it prematurely can block tight turns.
         cost_scaling_factor: 2.0
-        inflation_radius: 0.10
+        inflation_radius: 0.20
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
@@ -237,13 +237,14 @@ local_costmap:
           raytrace_min_range: 0.0
           obstacle_max_range: 2.5
           obstacle_min_range: 0.0
+          observation_persistence: 0.8
       always_send_full_costmap: True
 
 global_costmap:
   global_costmap:
     ros__parameters:
-      update_frequency: 1.0
-      publish_frequency: 1.0
+      update_frequency: 2.0
+      publish_frequency: 2.0
       global_frame: map
       robot_base_frame: base_link
       use_sim_time: True
@@ -268,6 +269,7 @@ global_costmap:
           raytrace_min_range: 0.0
           obstacle_max_range: 2.5
           obstacle_min_range: 0.0
+          observation_persistence: 0.8
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
@@ -275,8 +277,8 @@ global_costmap:
         plugin: "nav2_costmap_2d::InflationLayer"
         # Give the global planner a wider preference for road centres.  The
         # radius is a cost field, not an extra physical robot radius.
-        cost_scaling_factor: 2.0
-        inflation_radius: 0.22
+        cost_scaling_factor: 1.5
+        inflation_radius: 0.35
       always_send_full_costmap: True
 
 map_server:
@@ -296,7 +298,8 @@ map_saver:
 
 planner_server:
   ros__parameters:
-    expected_planner_frequency: 20.0
+    # The default NavigateToPose behavior tree replans at 1 Hz.
+    expected_planner_frequency: 1.0
     use_sim_time: True
     planner_plugins: ["GridBased"]
     GridBased:

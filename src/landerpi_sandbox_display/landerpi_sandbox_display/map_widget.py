@@ -1,10 +1,21 @@
 import math
+from dataclasses import dataclass
 
 from PyQt5.QtCore import QPointF, QRectF, Qt, pyqtSignal
-from PyQt5.QtGui import QColor, QPainter, QPainterPath, QPen
+from PyQt5.QtGui import QColor, QPainter, QPainterPath, QPen, QPolygonF
 from PyQt5.QtWidgets import QWidget
 
 from landerpi_sandbox_display.coordinate_transform import CoordinateTransform
+
+
+@dataclass(frozen=True)
+class TaskMarker:
+    index: int
+    x: float
+    y: float
+    yaw: float
+    state: str
+
 
 class MapWidget(QWidget):
 
@@ -29,6 +40,7 @@ class MapWidget(QWidget):
 
         self.robot_pose = None
         self.goal_pose = None
+        self.task_markers = []
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -61,6 +73,10 @@ class MapWidget(QWidget):
 
     def set_goal_pose(self, pose):
         self.goal_pose = pose
+        self.update()
+
+    def set_task_markers(self, markers):
+        self.task_markers = list(markers)
         self.update()
 
     def paintEvent(self, event):
@@ -128,6 +144,8 @@ class MapWidget(QWidget):
                 QColor(255, 70, 70),
                 2.0,
             )
+
+            self._draw_task_markers(painter)
 
             self._draw_robot(painter)
 
@@ -201,6 +219,94 @@ class MapWidget(QWidget):
 
         painter.drawPath(
             painter_path
+        )
+
+    def _draw_task_markers(self, painter):
+        points = []
+        for marker in self.task_markers:
+            point = self.coordinate_transform.world_to_widget(
+                marker.x,
+                marker.y,
+                self.width(),
+                self.height(),
+            )
+            if point is not None:
+                points.append((marker, point))
+
+        if len(points) >= 2:
+            connector = QPainterPath()
+            connector.moveTo(QPointF(*points[0][1]))
+            for _marker, point in points[1:]:
+                connector.lineTo(QPointF(*point))
+            connector_pen = QPen(QColor(120, 135, 150, 180), 1.5)
+            connector_pen.setCosmetic(True)
+            connector_pen.setStyle(Qt.DashLine)
+            painter.setPen(connector_pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawPath(connector)
+
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        for marker, point in points:
+            self._draw_task_marker(painter, marker, point)
+
+    def _draw_task_marker(self, painter, marker, point):
+        center_x, center_y = point
+        state = str(marker.state).lower()
+        current_states = {'planning', 'navigating', 'waiting_for_stop'}
+        bad_states = {'failed', 'cancelled', 'not_executed'}
+
+        if state == 'succeeded':
+            color = QColor(36, 180, 110)
+        elif state in current_states:
+            color = QColor(255, 174, 50)
+        elif state in bad_states:
+            color = QColor(225, 72, 72)
+        else:
+            color = QColor(55, 145, 235)
+
+        pen = QPen(color, 2.2)
+        pen.setCosmetic(True)
+        painter.setPen(pen)
+
+        radius = 10.0
+        if state in current_states:
+            painter.setBrush(color)
+            painter.drawPolygon(QPolygonF([
+                QPointF(center_x, center_y - radius),
+                QPointF(center_x + radius, center_y),
+                QPointF(center_x, center_y + radius),
+                QPointF(center_x - radius, center_y),
+            ]))
+        elif state in bad_states:
+            painter.setBrush(Qt.NoBrush)
+            painter.drawLine(
+                QPointF(center_x - 8.0, center_y - 8.0),
+                QPointF(center_x + 8.0, center_y + 8.0),
+            )
+            painter.drawLine(
+                QPointF(center_x - 8.0, center_y + 8.0),
+                QPointF(center_x + 8.0, center_y - 8.0),
+            )
+        else:
+            painter.setBrush(color)
+            painter.drawEllipse(QPointF(center_x, center_y), radius, radius)
+
+        if state not in bad_states:
+            heading_length = 15.0
+            painter.drawLine(
+                QPointF(center_x, center_y),
+                QPointF(
+                    center_x + math.cos(marker.yaw) * heading_length,
+                    center_y - math.sin(marker.yaw) * heading_length,
+                ),
+            )
+
+        painter.setPen(QPen(QColor(255, 255, 255), 1.0))
+        painter.drawText(
+            QRectF(center_x - radius, center_y - radius,
+                   radius * 2.0, radius * 2.0),
+            Qt.AlignCenter,
+            str(marker.index),
         )
 
     def _draw_robot(

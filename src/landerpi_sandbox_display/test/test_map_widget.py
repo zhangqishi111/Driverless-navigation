@@ -7,7 +7,7 @@ from PyQt5.QtGui import QColor, QImage
 from PyQt5.QtCore import QPoint, Qt
 from PyQt5.QtTest import QTest
 
-from landerpi_sandbox_display.map_widget import MapWidget
+from landerpi_sandbox_display.map_widget import MapWidget, TaskMarker
 from landerpi_sandbox_display.coordinate_transform import CoordinateTransform
 from landerpi_sandbox_display.sandbox_display_node import (
     SandboxDisplayNode,
@@ -121,8 +121,100 @@ def test_data_setters_request_repaint():
     widget.set_actual_path([(0.0, 0.0)])
     widget.set_robot_pose((0.0, 0.0, 0.0))
     widget.set_goal_pose((1.0, 1.0))
+    widget.set_task_markers([
+        TaskMarker(1, 1.0, 1.0, 0.0, 'pending'),
+    ])
 
-    assert widget.update_count == initial_count + 6
+    assert widget.update_count == initial_count + 7
+
+
+def test_task_marker_setter_stores_a_copy():
+    widget = MapWidget()
+    markers = [TaskMarker(1, 1.0, 2.0, 0.3, 'pending')]
+
+    widget.set_task_markers(markers)
+    markers.clear()
+
+    assert widget.task_markers == [
+        TaskMarker(1, 1.0, 2.0, 0.3, 'pending'),
+    ]
+
+
+class RecordingPainter:
+    def __init__(self):
+        self.calls = []
+
+    def setRenderHint(self, *_args):
+        pass
+
+    def setPen(self, *_args):
+        pass
+
+    def setBrush(self, *_args):
+        pass
+
+    def drawPath(self, *_args):
+        self.calls.append(('path', None))
+
+    def drawEllipse(self, *_args):
+        self.calls.append(('ellipse', None))
+
+    def drawPolygon(self, *_args):
+        self.calls.append(('polygon', None))
+
+    def drawLine(self, *_args):
+        self.calls.append(('line', None))
+
+    def drawText(self, _rect, _alignment, text):
+        self.calls.append(('text', text))
+
+
+def test_task_markers_draw_connector_then_numbered_state_shapes():
+    transform = CoordinateTransform()
+    transform.update_map_info(
+        width=10,
+        height=10,
+        resolution=1.0,
+        origin_x=0.0,
+        origin_y=0.0,
+    )
+    widget = MapWidget(coordinate_transform=transform)
+    widget.resize(100, 100)
+    widget.set_task_markers([
+        TaskMarker(1, 2.0, 2.0, 0.0, 'pending'),
+        TaskMarker(2, 5.0, 5.0, 0.5, 'navigating'),
+        TaskMarker(3, 8.0, 8.0, 1.0, 'failed'),
+    ])
+    painter = RecordingPainter()
+
+    widget._draw_task_markers(painter)
+
+    call_names = [name for name, _value in painter.calls]
+    assert call_names[0] == 'path'
+    assert 'ellipse' in call_names
+    assert 'polygon' in call_names
+    assert call_names.count('line') >= 3
+    assert [value for name, value in painter.calls if name == 'text'] == [
+        '1', '2', '3',
+    ]
+
+
+def test_not_executed_marker_uses_numbered_cross_not_success_circle():
+    transform = CoordinateTransform()
+    transform.update_map_info(10, 10, 1.0, 0.0, 0.0)
+    widget = MapWidget(coordinate_transform=transform)
+    widget.resize(100, 100)
+    widget.set_task_markers([
+        TaskMarker(3, 4.0, 4.0, 0.0, 'not_executed'),
+    ])
+    painter = RecordingPainter()
+
+    widget._draw_task_markers(painter)
+
+    call_names = [name for name, _value in painter.calls]
+    assert call_names.count('line') >= 2
+    assert 'ellipse' not in call_names
+    assert ('text', '3') in painter.calls
 
 def test_map_widget_renders_map_without_smoothing():
     transform = CoordinateTransform()

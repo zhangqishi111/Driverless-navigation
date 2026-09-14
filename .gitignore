@@ -78,3 +78,6 @@ vcpkg_installed/
 # Test output and cache
 Testing/
 .cache/
+
+# Local isolated feature worktrees
+.worktrees/

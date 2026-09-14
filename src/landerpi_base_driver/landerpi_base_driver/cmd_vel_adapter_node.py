@@ -43,6 +43,7 @@ class CmdVelAdapterNode(Node):
 
         self._last_command_time = None
         self._command_active = False
+        self._timeout_stop_active = False
         self._timer = self.create_timer(0.05, self._check_timeout)
 
         self.get_logger().info(
@@ -95,6 +96,7 @@ class CmdVelAdapterNode(Node):
         self._publisher.publish(output)
         self._last_command_time = self.get_clock().now()
         self._command_active = True
+        self._timeout_stop_active = False
 
     def _check_timeout(self) -> None:
         if not self._command_active or self._last_command_time is None:
@@ -105,14 +107,20 @@ class CmdVelAdapterNode(Node):
         ).nanoseconds / 1e9
 
         if elapsed >= self._timeout:
-            self.get_logger().warning(
-                'cmd_vel timeout: publishing stop command'
-            )
-            self._publish_stop()
+            if not self._timeout_stop_active:
+                self.get_logger().warning(
+                    'cmd_vel timeout: publishing continuous stop commands'
+                )
+                self._timeout_stop_active = True
+            # Continue publishing zero while the upstream command is stale.
+            # The controller stays stopped and downstream observers can prove
+            # that zero velocity remained commanded for their settle period.
+            self._publisher.publish(Twist())
 
     def _publish_stop(self) -> None:
         self._publisher.publish(Twist())
         self._command_active = False
+        self._timeout_stop_active = False
         self._last_command_time = None
 
     def stop(self) -> None:

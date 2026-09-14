@@ -187,7 +187,7 @@ controller_server:
       # Prefer trajectories with real clearance; collision checking remains
       # rectangular through ObstacleFootprint, this only changes the ranking
       # of non-colliding candidates.
-      ObstacleFootprint.scale: 0.05
+      ObstacleFootprint.scale: 0.50
       PathAlign.scale: 32.0
       PathAlign.forward_point_distance: 0.1
       GoalAlign.scale: 24.0
@@ -237,13 +237,14 @@ local_costmap:
           raytrace_min_range: 0.0
           obstacle_max_range: 2.5
           obstacle_min_range: 0.0
+          observation_persistence: 0.8
       always_send_full_costmap: True
 
 global_costmap:
   global_costmap:
     ros__parameters:
-      update_frequency: 1.0
-      publish_frequency: 1.0
+      update_frequency: 2.0
+      publish_frequency: 2.0
       global_frame: map
       robot_base_frame: base_link
       use_sim_time: True
@@ -251,10 +252,24 @@ global_costmap:
       footprint: "[[0.135, 0.105], [0.135, -0.105], [-0.135, -0.105], [-0.135, 0.105]]"
       resolution: 0.05
       track_unknown_space: true
-      # The static map provides global routing.  Dynamic laser returns remain
-      # in the local costmap, where they can be safely handled by the local
-      # controller without falsely disconnecting distant global goals.
-      plugins: ["static_layer", "inflation_layer"]
+      # Replanning must see the same live obstacles as the local controller.
+      # Keep clearing enabled so routes reopen after an obstacle moves away.
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: scan
+        scan:
+          topic: /scan
+          max_obstacle_height: 2.0
+          clearing: True
+          marking: True
+          data_type: "LaserScan"
+          raytrace_max_range: 3.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 2.5
+          obstacle_min_range: 0.0
+          observation_persistence: 0.8
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
@@ -283,7 +298,8 @@ map_saver:
 
 planner_server:
   ros__parameters:
-    expected_planner_frequency: 20.0
+    # The default NavigateToPose behavior tree replans at 1 Hz.
+    expected_planner_frequency: 1.0
     use_sim_time: True
     planner_plugins: ["GridBased"]
     GridBased:

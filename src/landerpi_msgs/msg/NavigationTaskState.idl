@@ -1,0 +1,27 @@
+#include "std_msgs/msg/Header.idl"
+#include "landerpi_msgs/msg/NavigationPointState.idl"
+
+module landerpi_msgs {
+  module msg {
+    module NavigationTaskState_Constants {
+      const uint8 IDLE = 0;
+      const uint8 ACTIVE = 1;
+      const uint8 SUCCEEDED = 2;
+      const uint8 FAILED = 3;
+      const uint8 CANCELLED = 4;
+      const uint8 REJECTED = 5;
+    };
+
+    struct NavigationTaskState {
+      std_msgs::msg::Header header;
+      uint32 task_id;
+      boolean active;
+      uint8 current_index;
+      uint8 total_points;
+      uint8 state;
+      float elapsed_time_s;
+      string detail;
+      sequence<landerpi_msgs::msg::NavigationPointState> points;
+    };
+  };
+};

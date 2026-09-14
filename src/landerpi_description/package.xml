@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>landerpi_description</name>
+  <name>landerpi_sim_description</name>
   <version>0.1.0</version>
-  <description>LanderPi robot description and simulation assets.</description>
+  <description>LanderPi simulation description and assets.</description>
   <maintainer email="team@example.com">LanderPi Team</maintainer>
   <license>Apache-2.0</license>
   <buildtool_depend>ament_cmake</buildtool_depend>

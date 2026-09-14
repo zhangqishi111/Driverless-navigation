@@ -22,7 +22,7 @@ def generate_launch_description():
     navigation_launch = os.path.join(
         navigation_dir, 'launch', 'navigation.launch.py')
     real_map = os.path.join(
-        bringup_dir, 'maps', 'real_sandbox_clean.yaml')
+        bringup_dir, 'maps', 'real_sandbox.yaml')
     params_file = os.path.join(
         navigation_dir, 'config', 'nav2_params.yaml')
 
@@ -36,6 +36,8 @@ def generate_launch_description():
                 'autostart': 'true',
                 # On the vehicle, verify the command after the safety adapter.
                 'task_stop_velocity_topic': '/controller/cmd_vel',
+                # Keep the stricter localization gate on physical hardware.
+                'task_max_position_variance': '0.25',
             }.items(),
         ),
     ])

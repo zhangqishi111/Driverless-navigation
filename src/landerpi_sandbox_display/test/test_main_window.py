@@ -15,6 +15,8 @@ os.environ.setdefault(
 
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtWidgets import QLabel
+from PyQt5.QtCore import Qt
+from PyQt5.QtTest import QTest
 from landerpi_sandbox_display.main_window import MainWindow
 from landerpi_sandbox_display.map_widget import MapWidget
 
@@ -567,6 +569,20 @@ def test_multi_goal_controls_start_in_single_goal_mode():
 
     assert window.single_goal_mode_button.isChecked()
     assert not window.multi_goal_mode_button.isChecked()
+
+
+def test_map_zoom_buttons_update_percentage_and_reset_view():
+    window = MainWindow()
+    window.coordinate_transform.update_map_info(
+        100, 100, 0.1, 0.0, 0.0)
+
+    assert window.map_zoom_value.text() == '100%'
+
+    QTest.mouseClick(window.map_zoom_in_button, Qt.LeftButton)
+    assert window.map_zoom_value.text() == '125%'
+
+    QTest.mouseClick(window.map_zoom_reset_button, Qt.LeftButton)
+    assert window.map_zoom_value.text() == '100%'
     assert window.task_table.isHidden()
     assert not window.goal_x_value.parentWidget().isHidden()
     assert not window.submit_task_button.isEnabled()

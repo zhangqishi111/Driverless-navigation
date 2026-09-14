@@ -137,6 +137,59 @@ def test_widget_to_world_round_trip():
     assert abs(world_y - original_y) < 1e-6
 
 
+def test_zoom_at_keeps_world_position_under_pointer():
+    transform = CoordinateTransform()
+    transform.update_map_info(
+        width=100,
+        height=50,
+        resolution=0.05,
+        origin_x=-2.5,
+        origin_y=-1.25,
+    )
+
+    before = transform.widget_to_world(500, 280, 800, 600)
+    transform.zoom_at(1.25, 500, 280, 800, 600)
+    after = transform.widget_to_world(500, 280, 800, 600)
+
+    assert transform.zoom == 1.25
+    assert before is not None
+    assert after is not None
+    assert abs(after[0] - before[0]) < 1e-6
+    assert abs(after[1] - before[1]) < 1e-6
+
+
+def test_zoom_is_clamped_and_reset_restores_full_map_view():
+    transform = CoordinateTransform()
+    transform.update_map_info(100, 50, 0.05, -2.5, -1.25)
+
+    transform.zoom_at(100.0, 400, 300, 800, 600)
+    assert transform.zoom == 5.0
+
+    transform.zoom_at(0.001, 400, 300, 800, 600)
+    assert transform.zoom == 1.0
+
+    transform.zoom_at(2.0, 400, 300, 800, 600)
+    transform.pan_view(100, -50, 800, 600)
+    transform.reset_view()
+
+    assert transform.zoom == 1.0
+    assert transform.widget_viewport(800, 600) == (0.0, 100.0, 800.0, 400.0)
+
+
+def test_pan_view_moves_visible_map_but_preserves_round_trip():
+    transform = CoordinateTransform()
+    transform.update_map_info(100, 100, 0.1, 0.0, 0.0)
+    transform.zoom_at(2.0, 50, 50, 100, 100)
+
+    before = transform.world_to_widget(5.0, 5.0, 100, 100)
+    transform.pan_view(10, -5, 100, 100)
+    after = transform.world_to_widget(5.0, 5.0, 100, 100)
+
+    assert before == (50.0, 48.0)
+    assert after == (60.0, 43.0)
+    assert transform.widget_to_world(*after, 100, 100) == (5.0, 5.0)
+
+
 def test_widget_to_world_rejects_click_outside_map():
     transform = CoordinateTransform()
 

@@ -5,6 +5,9 @@ class CoordinateTransform:
         self.resolution = 0.0
         self.origin_x = 0.0
         self.origin_y = 0.0
+        self.zoom = 1.0
+        self._view_center_x = None
+        self._view_center_y = None
 
     def update_map_info(
         self,
@@ -14,11 +17,107 @@ class CoordinateTransform:
         origin_x,
         origin_y,
     ):
+        geometry_changed = (
+            self.map_width != width
+            or self.map_height != height
+            or self.resolution != resolution
+            or self.origin_x != origin_x
+            or self.origin_y != origin_y
+        )
         self.map_width = width
         self.map_height = height
         self.resolution = resolution
         self.origin_x = origin_x
         self.origin_y = origin_y
+        if geometry_changed:
+            self.reset_view()
+
+    def reset_view(self):
+        self.zoom = 1.0
+        self._view_center_x = self.map_width / 2.0
+        self._view_center_y = self.map_height / 2.0
+
+    def zoom_at(
+            self,
+            factor,
+            widget_x,
+            widget_y,
+            widget_width,
+            widget_height,
+    ):
+        viewport = self.widget_viewport(widget_width, widget_height)
+        if viewport is None or factor <= 0:
+            return self.zoom
+
+        offset_x, offset_y, displayed_width, _displayed_height = viewport
+        old_scale = displayed_width / self.map_width
+        map_x = (widget_x - offset_x) / old_scale
+        map_y = (widget_y - offset_y) / old_scale
+
+        new_zoom = min(5.0, max(1.0, self.zoom * float(factor)))
+        if new_zoom == self.zoom:
+            return self.zoom
+
+        self.zoom = new_zoom
+        scale = self._base_scale(widget_width, widget_height) * self.zoom
+        self._view_center_x = (
+            widget_width / 2.0 - widget_x + map_x * scale
+        ) / scale
+        self._view_center_y = (
+            widget_height / 2.0 - widget_y + map_y * scale
+        ) / scale
+        self._clamp_view_center(widget_width, widget_height)
+        return self.zoom
+
+    def pan_view(
+            self,
+            delta_x,
+            delta_y,
+            widget_width,
+            widget_height,
+    ):
+        if self.zoom <= 1.0:
+            return
+        scale = self._base_scale(widget_width, widget_height) * self.zoom
+        if scale <= 0:
+            return
+        self._ensure_view_center()
+        self._view_center_x -= float(delta_x) / scale
+        self._view_center_y -= float(delta_y) / scale
+        self._clamp_view_center(widget_width, widget_height)
+
+    def _base_scale(self, widget_width, widget_height):
+        if self.map_width <= 0 or self.map_height <= 0:
+            return 0.0
+        return min(
+            widget_width / self.map_width,
+            widget_height / self.map_height,
+        )
+
+    def _ensure_view_center(self):
+        if self._view_center_x is None:
+            self._view_center_x = self.map_width / 2.0
+        if self._view_center_y is None:
+            self._view_center_y = self.map_height / 2.0
+
+    @staticmethod
+    def _clamp_axis(center, map_size, widget_size, scale):
+        half_visible = widget_size / (2.0 * scale)
+        first_bound = half_visible
+        second_bound = map_size - half_visible
+        lower = min(first_bound, second_bound)
+        upper = max(first_bound, second_bound)
+        return min(upper, max(lower, center))
+
+    def _clamp_view_center(self, widget_width, widget_height):
+        scale = self._base_scale(widget_width, widget_height) * self.zoom
+        if scale <= 0:
+            return
+        self._ensure_view_center()
+        self._view_center_x = self._clamp_axis(
+            self._view_center_x, self.map_width, widget_width, scale)
+        self._view_center_y = self._clamp_axis(
+            self._view_center_y, self.map_height, widget_height, scale)
 
     def world_to_pixel(self, x, y):
         if self.resolution <= 0:
@@ -181,21 +280,20 @@ class CoordinateTransform:
         ):
             return None
 
-        scale = min(
-            widget_width / self.map_width,
-            widget_height / self.map_height,
-        )
+        scale = self._base_scale(widget_width, widget_height) * self.zoom
 
         displayed_width = self.map_width * scale
         displayed_height = self.map_height * scale
 
+        self._ensure_view_center()
+
         offset_x = (
-                           widget_width - displayed_width
-                   ) / 2.0
+            widget_width / 2.0 - self._view_center_x * scale
+        )
 
         offset_y = (
-                           widget_height - displayed_height
-                   ) / 2.0
+            widget_height / 2.0 - self._view_center_y * scale
+        )
 
         return (
             offset_x,

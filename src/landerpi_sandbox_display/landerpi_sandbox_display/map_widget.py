@@ -20,6 +20,7 @@ class TaskMarker:
 class MapWidget(QWidget):
 
     clicked = pyqtSignal(float, float)
+    zoom_changed = pyqtSignal(int)
 
     def __init__(
             self,
@@ -41,8 +42,13 @@ class MapWidget(QWidget):
         self.robot_pose = None
         self.goal_pose = None
         self.task_markers = []
+        self._pan_position = None
 
     def mousePressEvent(self, event):
+        if event.button() == Qt.MiddleButton:
+            self._pan_position = event.pos()
+            event.accept()
+            return
         if event.button() == Qt.LeftButton:
             self.clicked.emit(
                 float(event.x()),
@@ -50,6 +56,52 @@ class MapWidget(QWidget):
             )
 
         super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._pan_position is not None:
+            position = event.pos()
+            delta = position - self._pan_position
+            self._pan_position = position
+            self.coordinate_transform.pan_view(
+                delta.x(), delta.y(), self.width(), self.height())
+            self.update()
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MiddleButton and self._pan_position is not None:
+            self._pan_position = None
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def wheelEvent(self, event):
+        delta = event.angleDelta().y()
+        if delta == 0:
+            super().wheelEvent(event)
+            return
+        factor = 1.25 if delta > 0 else 1.0 / 1.25
+        position = event.posF()
+        self._zoom_at(factor, position.x(), position.y())
+        event.accept()
+
+    def zoom_in(self):
+        self._zoom_at(1.25, self.width() / 2.0, self.height() / 2.0)
+
+    def zoom_out(self):
+        self._zoom_at(1.0 / 1.25, self.width() / 2.0, self.height() / 2.0)
+
+    def reset_view(self):
+        self.coordinate_transform.reset_view()
+        self.update()
+        self.zoom_changed.emit(100)
+
+    def _zoom_at(self, factor, x, y):
+        zoom = self.coordinate_transform.zoom_at(
+            factor, x, y, self.width(), self.height())
+        self.update()
+        self.zoom_changed.emit(int(round(zoom * 100)))
 
     def set_map_image(self, image):
         self.map_image = image

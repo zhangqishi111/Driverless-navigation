@@ -3,8 +3,8 @@ import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
 from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QColor, QImage
-from PyQt5.QtCore import QPoint, Qt
+from PyQt5.QtGui import QColor, QImage, QMouseEvent, QWheelEvent
+from PyQt5.QtCore import QEvent, QPoint, QPointF, Qt
 from PyQt5.QtTest import QTest
 
 from landerpi_sandbox_display.map_widget import MapWidget, TaskMarker
@@ -544,6 +544,86 @@ def test_map_widget_emits_clicked_signal_on_left_click():
     assert received == [
         (23.0, 37.0)
     ]
+
+
+def test_mouse_wheel_zooms_at_pointer_and_reports_percentage():
+    transform = CoordinateTransform()
+    transform.update_map_info(100, 100, 0.1, 0.0, 0.0)
+    widget = MapWidget(coordinate_transform=transform)
+    widget.resize(100, 100)
+    percentages = []
+    widget.zoom_changed.connect(percentages.append)
+
+    event = QWheelEvent(
+        QPointF(75, 50),
+        QPointF(75, 50),
+        QPoint(0, 0),
+        QPoint(0, 120),
+        Qt.NoButton,
+        Qt.NoModifier,
+        Qt.NoScrollPhase,
+        False,
+    )
+    widget.wheelEvent(event)
+
+    assert transform.zoom == 1.25
+    assert percentages == [125]
+    assert event.isAccepted()
+
+
+def test_zoom_controls_change_and_reset_map_view():
+    transform = CoordinateTransform()
+    transform.update_map_info(100, 100, 0.1, 0.0, 0.0)
+    widget = MapWidget(coordinate_transform=transform)
+    widget.resize(100, 100)
+
+    widget.zoom_in()
+    assert transform.zoom == 1.25
+
+    widget.zoom_out()
+    assert transform.zoom == 1.0
+
+    widget.zoom_in()
+    widget.reset_view()
+    assert transform.zoom == 1.0
+
+
+def test_middle_button_drag_pans_zoomed_map_without_emitting_click():
+    transform = CoordinateTransform()
+    transform.update_map_info(100, 100, 0.1, 0.0, 0.0)
+    widget = MapWidget(coordinate_transform=transform)
+    widget.resize(100, 100)
+    widget.zoom_in()
+    clicked = []
+    widget.clicked.connect(lambda x, y: clicked.append((x, y)))
+    before = transform.widget_viewport(100, 100)
+
+    widget.mousePressEvent(QMouseEvent(
+        QEvent.MouseButtonPress,
+        QPointF(50, 50),
+        Qt.MiddleButton,
+        Qt.MiddleButton,
+        Qt.NoModifier,
+    ))
+    widget.mouseMoveEvent(QMouseEvent(
+        QEvent.MouseMove,
+        QPointF(60, 45),
+        Qt.NoButton,
+        Qt.MiddleButton,
+        Qt.NoModifier,
+    ))
+    widget.mouseReleaseEvent(QMouseEvent(
+        QEvent.MouseButtonRelease,
+        QPointF(60, 45),
+        Qt.MiddleButton,
+        Qt.NoButton,
+        Qt.NoModifier,
+    ))
+
+    after = transform.widget_viewport(100, 100)
+    assert after[0] > before[0]
+    assert after[1] < before[1]
+    assert clicked == []
 
 def test_downsample_poses_limits_size_and_preserves_ends():
     poses = list(range(2000))

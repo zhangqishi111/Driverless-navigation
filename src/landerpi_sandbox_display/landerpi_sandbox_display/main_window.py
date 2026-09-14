@@ -76,6 +76,20 @@ class MainWindow(QMainWindow):
             self.handle_map_click
         )
 
+        self.map_zoom_out_button = QPushButton('−')
+        self.map_zoom_value = QLabel('100%')
+        self.map_zoom_in_button = QPushButton('+')
+        self.map_zoom_reset_button = QPushButton('Reset')
+        self.map_zoom_out_button.setToolTip('Zoom out')
+        self.map_zoom_in_button.setToolTip('Zoom in')
+        self.map_zoom_reset_button.setToolTip('Show the complete map')
+        self.map_zoom_value.setAlignment(Qt.AlignCenter)
+        self.map_zoom_value.setMinimumWidth(48)
+        self.map_zoom_out_button.clicked.connect(self.map_widget.zoom_out)
+        self.map_zoom_in_button.clicked.connect(self.map_widget.zoom_in)
+        self.map_zoom_reset_button.clicked.connect(self.map_widget.reset_view)
+        self.map_widget.zoom_changed.connect(self._update_map_zoom_value)
+
         # =========================
         # Robot State
         # =========================
@@ -430,10 +444,24 @@ class MainWindow(QMainWindow):
             QSizePolicy.Expanding,
         )
 
-        content_layout.addWidget(
-            self.map_widget,
-            4,
-        )
+        map_panel = QWidget()
+        map_layout = QVBoxLayout(map_panel)
+        map_layout.setContentsMargins(0, 0, 0, 0)
+        map_layout.setSpacing(4)
+        map_controls = QWidget()
+        map_controls_layout = QHBoxLayout(map_controls)
+        map_controls_layout.setContentsMargins(0, 0, 0, 0)
+        map_controls_layout.addStretch(1)
+        for widget in (
+                self.map_zoom_out_button,
+                self.map_zoom_value,
+                self.map_zoom_in_button,
+                self.map_zoom_reset_button):
+            map_controls_layout.addWidget(widget)
+        map_layout.addWidget(map_controls)
+        map_layout.addWidget(self.map_widget, 1)
+
+        content_layout.addWidget(map_panel, 4)
 
         # 右侧信息区
         side_panel = QWidget()
@@ -497,6 +525,9 @@ class MainWindow(QMainWindow):
     # =============================
     # Map
     # =============================
+
+    def _update_map_zoom_value(self, percentage):
+        self.map_zoom_value.setText(f'{percentage}%')
 
     def update_map(self, msg):
         width = msg.info.width

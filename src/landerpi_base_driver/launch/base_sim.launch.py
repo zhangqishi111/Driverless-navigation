@@ -9,7 +9,8 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    description_share = get_package_share_directory('landerpi_description')
+    description_share = get_package_share_directory(
+        'landerpi_sim_description')
     driver_share = get_package_share_directory('landerpi_base_driver')
     ros_gz_share = get_package_share_directory('ros_gz_sim')
 
@@ -64,4 +65,3 @@ def generate_launch_description():
             parameters=[{'use_sim_time': True}],
         ),
     ])
-

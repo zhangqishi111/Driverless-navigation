@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(landerpi_description)
+project(landerpi_sim_description)
 
 find_package(ament_cmake REQUIRED)
 

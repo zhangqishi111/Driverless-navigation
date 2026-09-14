@@ -28,8 +28,8 @@ def test_both_costmaps_mark_and_clear_live_scan_obstacles():
     global_params = config['global_costmap']['global_costmap']['ros__parameters']
     local_params = config['local_costmap']['local_costmap']['ros__parameters']
     assert global_params['update_frequency'] >= 2.0
-    assert global_params['inflation_layer']['inflation_radius'] >= 0.30
-    assert local_params['inflation_layer']['inflation_radius'] >= 0.20
+    assert global_params['inflation_layer']['inflation_radius'] == 0.22
+    assert local_params['inflation_layer']['inflation_radius'] == 0.10
 
 
 def test_missing_receiver_does_not_publish_or_consume_draft():

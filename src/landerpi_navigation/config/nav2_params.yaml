@@ -222,7 +222,7 @@ local_costmap:
         # Keep the local field conservative: it is also used by DWB to reject
         # sampled manoeuvres, so widening it prematurely can block tight turns.
         cost_scaling_factor: 2.0
-        inflation_radius: 0.20
+        inflation_radius: 0.10
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
@@ -277,8 +277,8 @@ global_costmap:
         plugin: "nav2_costmap_2d::InflationLayer"
         # Give the global planner a wider preference for road centres.  The
         # radius is a cost field, not an extra physical robot radius.
-        cost_scaling_factor: 1.5
-        inflation_radius: 0.35
+        cost_scaling_factor: 2.0
+        inflation_radius: 0.22
       always_send_full_costmap: True
 
 map_server:

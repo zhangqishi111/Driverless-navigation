@@ -22,7 +22,7 @@ def generate_launch_description():
     navigation_launch = os.path.join(
         navigation_dir, 'launch', 'navigation.launch.py')
     real_map = os.path.join(
-        bringup_dir, 'maps', 'real_sandbox_clean.yaml')
+        bringup_dir, 'maps', 'real_sandbox.yaml')
     params_file = os.path.join(
         navigation_dir, 'config', 'nav2_params.yaml')
 

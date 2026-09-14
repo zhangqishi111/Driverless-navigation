@@ -17,7 +17,7 @@ def generate_launch_description():
     default_map = os.path.join(
         bringup_dir,
         'maps',
-        'real_sandbox_clean.yaml'
+        'real_sandbox.yaml'
     )
 
     default_params = os.path.join(

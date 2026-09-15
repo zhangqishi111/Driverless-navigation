@@ -40,9 +40,10 @@ class MainWindow(QMainWindow):
         )
 
         self.resize(
-            1200,
-            760,
+            1580,
+            920,
         )
+        self.setMinimumSize(1280, 760)
 
         if coordinate_transform is None:
             coordinate_transform = (
@@ -293,7 +294,10 @@ class MainWindow(QMainWindow):
             'Multi-goal Task',
         )
 
-        self.task_table = QTableWidget(3, 8)
+        # Rows are created only after the operator picks a map point or the
+        # backend returns a task point.  The three-goal limit lives in
+        # TaskDraft / the backend contract, not in a preallocated table.
+        self.task_table = QTableWidget(0, 8)
         self.task_table.setHorizontalHeaderLabels([
             '#', 'X', 'Y', 'Yaw°', 'State', 'Error', 'Time', 'Retry',
         ])
@@ -303,12 +307,22 @@ class MainWindow(QMainWindow):
         self.task_table.setEditTriggers(
             QAbstractItemView.DoubleClicked |
             QAbstractItemView.SelectedClicked)
-        self.task_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.Fixed)
+        task_header = self.task_table.horizontalHeader()
+        task_header.setSectionResizeMode(QHeaderView.Interactive)
         for column, width in enumerate((30, 70, 70, 52, 112, 82, 62, 50)):
             self.task_table.setColumnWidth(column, width)
+        # Keep compact numeric fields predictable and give State the spare
+        # width, so the table always fills the task card without clipping it.
+        task_header.setSectionResizeMode(4, QHeaderView.Stretch)
         self.task_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.task_table.setMinimumHeight(128)
+        self.task_table.setMinimumHeight(0)
+        self.task_table.setSizePolicy(
+            QSizePolicy.Expanding,
+            QSizePolicy.Minimum,
+        )
+        self.task_table.verticalHeader().setSectionResizeMode(
+            QHeaderView.Fixed)
+        self.task_table.verticalHeader().setDefaultSectionSize(45)
         navigation_layout.addWidget(self.task_table)
 
         buttons = QWidget()
@@ -337,14 +351,20 @@ class MainWindow(QMainWindow):
 
     def _create_panel(self, title):
         panel = QFrame()
+        panel.setObjectName('panel')
 
         panel.setFrameShape(
             QFrame.StyledPanel
+        )
+        panel.setSizePolicy(
+            QSizePolicy.Preferred,
+            QSizePolicy.Maximum,
         )
 
         layout = QVBoxLayout(panel)
 
         title_label = QLabel(title)
+        title_label.setObjectName('panelTitle')
 
         title_label.setAlignment(
             Qt.AlignLeft
@@ -359,16 +379,17 @@ class MainWindow(QMainWindow):
 
     def _build_ui(self):
         central_widget = QWidget()
+        central_widget.setObjectName('consoleRoot')
 
         root_layout = QVBoxLayout(
             central_widget
         )
 
         root_layout.setContentsMargins(
-            12,
-            12,
-            12,
-            12,
+            16,
+            14,
+            16,
+            16,
         )
 
         root_layout.setSpacing(10)
@@ -378,27 +399,31 @@ class MainWindow(QMainWindow):
         # =========================
 
         header = QFrame()
+        header.setObjectName('header')
+        header.setMinimumHeight(52)
 
         header_layout = QHBoxLayout(
             header
         )
 
-        title_label = QLabel(
+        self.header_title_label = QLabel(
             'LanderPi Navigation Console'
         )
+        self.header_title_label.setObjectName('headerTitle')
 
-        connection_label = QLabel(
-            '● ROS display'
+        self.connection_label = QLabel(
+            '● Connected'
         )
+        self.connection_label.setObjectName('connectionStatus')
 
         header_layout.addWidget(
-            title_label
+            self.header_title_label
         )
 
         header_layout.addStretch()
 
         header_layout.addWidget(
-            connection_label
+            self.connection_label
         )
 
         root_layout.addWidget(
@@ -424,20 +449,36 @@ class MainWindow(QMainWindow):
 
         content_layout.setSpacing(10)
 
-        # 左侧地图
+        # 左侧地图：只保留已有的地图点击交互，不新增地图控制接口。
+        map_container = QFrame()
+        map_container.setObjectName('mapContainer')
+        map_layout = QVBoxLayout(map_container)
+        map_layout.setContentsMargins(8, 8, 8, 8)
+        map_layout.setSpacing(6)
+
         self.map_widget.setSizePolicy(
             QSizePolicy.Expanding,
             QSizePolicy.Expanding,
         )
+        self.map_widget.setObjectName('mapCanvas')
 
-        content_layout.addWidget(
+        map_layout.addWidget(
             self.map_widget,
-            4,
+            1,
         )
+
+        self.map_hint_label = QLabel(
+            'Click map to add goals (max 3)'
+        )
+        self.map_hint_label.setObjectName('mapHint')
+        map_layout.addWidget(self.map_hint_label)
+
+        content_layout.addWidget(map_container, 1)
 
         # 右侧信息区
         side_panel = QWidget()
-        side_panel.setMinimumWidth(580)
+        side_panel.setMinimumWidth(560)
+        side_panel.setMaximumWidth(600)
 
         side_layout = QVBoxLayout(
             side_panel
@@ -457,12 +498,14 @@ class MainWindow(QMainWindow):
         )
 
         side_layout.addWidget(
-            self.navigation_task_panel
+            self.navigation_task_panel,
+            1,
         )
 
         side_layout.addWidget(
             self.map_info_panel
         )
+        side_layout.addStretch(1)
 
         content_layout.addWidget(
             side_panel,
@@ -479,11 +522,11 @@ class MainWindow(QMainWindow):
         # =========================
 
         self.event_log_panel.setMinimumHeight(
-            120
+            112
         )
 
         self.event_log_panel.setMaximumHeight(
-            160
+            138
         )
 
         root_layout.addWidget(
@@ -493,6 +536,110 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(
             central_widget
         )
+
+        self.setStyleSheet('''
+            QMainWindow, QWidget#consoleRoot {
+                background: #0b1626;
+                color: #e8f0fa;
+                font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+                font-size: 13px;
+            }
+            QFrame#header {
+                background: #10233a;
+                border: 1px solid #203d5d;
+                border-radius: 8px;
+            }
+            QLabel#headerTitle {
+                color: #f4f8ff;
+                font-size: 24px;
+                font-weight: 700;
+                padding-left: 8px;
+            }
+            QLabel#connectionStatus {
+                color: #e8f0fa;
+                font-size: 14px;
+                font-weight: 600;
+                padding: 0 12px;
+            }
+            QFrame#panel, QFrame#mapContainer {
+                background: #10233a;
+                border: 1px solid #254766;
+                border-radius: 8px;
+            }
+            QLabel#panelTitle {
+                color: #f2f7ff;
+                font-size: 16px;
+                font-weight: 700;
+                padding: 2px 2px 7px 2px;
+            }
+            QLabel#mapHint {
+                color: #aabed2;
+                font-size: 12px;
+                padding: 0 4px 2px 4px;
+            }
+            QWidget#mapCanvas {
+                background: #1f2937;
+                border: 1px solid #37516e;
+                border-radius: 4px;
+            }
+            QLabel {
+                color: #c9d8e9;
+            }
+            QRadioButton {
+                color: #dce8f5;
+                spacing: 6px;
+                padding: 2px 4px;
+            }
+            QRadioButton::indicator {
+                width: 14px;
+                height: 14px;
+                border: 1px solid #6d87a4;
+                border-radius: 7px;
+                background: #0c1a2c;
+            }
+            QRadioButton::indicator:checked {
+                border: 4px solid #2d7ff9;
+                background: #0c1a2c;
+            }
+            QTableWidget {
+                background: #0c1a2c;
+                alternate-background-color: #10233a;
+                color: #e4edf8;
+                gridline-color: #294765;
+                border: 1px solid #294765;
+                border-radius: 5px;
+                selection-background-color: #1c426d;
+                selection-color: #ffffff;
+            }
+            QHeaderView::section {
+                background: #1c3552;
+                color: #dce9f6;
+                border: 0;
+                border-right: 1px solid #294765;
+                padding: 5px 2px;
+                font-weight: 600;
+            }
+            QPushButton {
+                min-height: 28px;
+                padding: 2px 10px;
+                color: #edf5ff;
+                background: #1b426d;
+                border: 1px solid #4d78a5;
+                border-radius: 5px;
+                font-weight: 600;
+            }
+            QPushButton:hover:enabled {
+                background: #28609b;
+            }
+            QPushButton:pressed:enabled {
+                background: #143555;
+            }
+            QPushButton:disabled {
+                color: #71869d;
+                background: #182a3e;
+                border-color: #2a3d52;
+            }
+        ''')
 
     # =============================
     # Map
@@ -791,15 +938,26 @@ class MainWindow(QMainWindow):
             item.setFlags(flags & ~Qt.ItemIsEditable)
 
     def _clear_task_table(self):
-        for row in range(self.task_table.rowCount()):
-            for column in range(self.task_table.columnCount()):
-                self._set_table_item(row, column, '', editable=False)
+        self.task_table.clearContents()
+        self.task_table.setRowCount(0)
+
+    def _fit_task_table_to_rows(self):
+        header_height = self.task_table.horizontalHeader().sizeHint().height()
+        rows_height = sum(
+            self.task_table.rowHeight(row)
+            for row in range(self.task_table.rowCount())
+        )
+        frame_height = self.task_table.frameWidth() * 2
+        self.task_table.setFixedHeight(
+            max(32, header_height + rows_height + frame_height)
+        )
 
     def _refresh_task_draft_view(self):
         goals = self.task_draft.goals()
         self._updating_task_table = True
         try:
             self._clear_task_table()
+            self.task_table.setRowCount(len(goals))
             for row, goal in enumerate(goals):
                 values = (
                     row + 1,
@@ -820,6 +978,8 @@ class MainWindow(QMainWindow):
                     )
         finally:
             self._updating_task_table = False
+
+        self._fit_task_table_to_rows()
 
         if self.multi_goal_mode_button.isChecked():
             self.map_widget.set_task_markers([
@@ -867,12 +1027,14 @@ class MainWindow(QMainWindow):
         if self._task_active or not goals or self.task_publish_callback is None:
             return
         if self.task_publish_callback(goals) is False:
-            self.task_summary_value.setText('Not submitted · task receiver unavailable')
+            self.task_summary_value.setText(
+                'Not submitted · task receiver unavailable')
             self.task_summary_value.setToolTip(
                 'No task receiver is connected or the draft is invalid. '
                 'Start navigation_task_queue, then submit again. Draft retained.')
             return
-        self.task_summary_value.setText('Submitted · waiting for task state')
+        self.task_summary_value.setText(
+            'Submitted · waiting for task state')
         self.task_summary_value.setToolTip(
             'Waiting for /navigation_task/state from the task queue. '
             'If this persists, check that display and navigation use matching versions.')
@@ -939,10 +1101,12 @@ class MainWindow(QMainWindow):
         }
 
         markers = []
+        task_points = message.points[:3]
         self._updating_task_table = True
         try:
             self._clear_task_table()
-            for row, point in enumerate(message.points[:3]):
+            self.task_table.setRowCount(len(task_points))
+            for row, point in enumerate(task_points):
                 yaw = self._yaw_from_pose(point.target)
                 state_text = point_states.get(point.state, 'Unknown')
                 error_text = (
@@ -976,6 +1140,8 @@ class MainWindow(QMainWindow):
         finally:
             self._updating_task_table = False
 
+        self._fit_task_table_to_rows()
+
         self.map_widget.set_task_markers(markers)
         self._update_task_controls()
 
@@ -989,6 +1155,11 @@ class MainWindow(QMainWindow):
         handlers = {
             'map':
                 self.update_map,
+
+            # /robot_pose is the AMCL-facing project interface.  TF pose
+            # updates below may subsequently refine the same visual marker.
+            'amcl_pose':
+                self.update_robot_pose,
 
             'robot_pose':
                 self.update_robot_pose,

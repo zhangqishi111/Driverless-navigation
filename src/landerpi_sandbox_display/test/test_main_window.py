@@ -645,7 +645,7 @@ def test_submit_publishes_the_whole_draft_once_and_cancel_is_one_shot():
     published = []
     cancelled = []
     window.set_task_publish_callback(
-        lambda goals: published.append(goals) or True)
+        lambda goals, with_grasp=False: published.append(goals) or True)
     window.set_task_cancel_callback(lambda: cancelled.append(True))
 
     window.submit_task_button.click()
@@ -739,5 +739,47 @@ def test_rejected_submission_without_point_records_keeps_draft_visible():
     assert window.task_table.item(0, 4).text() == 'Draft'
     assert 'Rejected' in window.task_summary_value.text()
     assert window.submit_task_button.isEnabled()
+
+    window.close()
+
+
+def test_multi_goal_task_mode_defaults_to_navigation_only():
+    window = MainWindow()
+
+    window.multi_goal_mode_button.setChecked(True)
+
+    assert window.navigation_only_task_mode_button.isChecked()
+    assert not window.navigation_grasp_task_mode_button.isChecked()
+
+    window.close()
+
+
+def test_navigation_grasp_mode_requires_three_points_and_passes_mode_to_submit():
+    window = MainWindow()
+    configure_test_map(window)
+    submitted = []
+
+    window.set_task_publish_callback(
+        lambda goals, with_grasp=False:
+        submitted.append((tuple(goals), with_grasp)) or True
+    )
+
+    window.multi_goal_mode_button.setChecked(True)
+    window.navigation_grasp_task_mode_button.setChecked(True)
+
+    click_world(window, 1.0, 1.0)
+    assert not window.submit_task_button.isEnabled()
+
+    click_world(window, 2.0, 2.0)
+    assert not window.submit_task_button.isEnabled()
+
+    click_world(window, 3.0, 3.0)
+    assert window.submit_task_button.isEnabled()
+
+    window.submit_task_button.click()
+
+    assert len(submitted) == 1
+    assert len(submitted[0][0]) == 3
+    assert submitted[0][1] is True
 
     window.close()

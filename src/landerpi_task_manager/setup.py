@@ -21,6 +21,7 @@ setup(
         'console_scripts': [
             'navigation_command_arbiter = landerpi_task_manager.command_arbiter:main',
             'task_queue = landerpi_task_manager.task_queue:main',
+            'nav_grasp_coordinator = landerpi_task_manager.nav_grasp_coordinator:main',
         ],
     },
 )

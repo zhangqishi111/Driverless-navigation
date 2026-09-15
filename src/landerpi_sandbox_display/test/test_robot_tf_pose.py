@@ -22,6 +22,24 @@ class PublisherCapture:
     def publish(self, message):
         self.messages.append(message)
 
+    def get_subscription_count(self):
+        return 1
+
+
+
+
+
+
+class LoggerCapture:
+    def info(self, message):
+        pass
+
+    def error(self, message):
+        pass
+
+class ServiceClientCapture:
+    def service_is_ready(self):
+        return False
 
 class FakeNow:
     def to_msg(self):
@@ -274,7 +292,16 @@ def test_publish_navigation_task_sends_one_ordered_map_pose_array():
     publisher = PublisherCapture()
     fake_node = SimpleNamespace(
         navigation_task_publisher=publisher,
+        nav_grasp_enable_client=ServiceClientCapture(),
         get_clock=lambda: FakeClock(),
+        get_logger=lambda: LoggerCapture(),
+    )
+    fake_node._publish_navigation_task_message = (
+        lambda goals:
+        SandboxDisplayNode._publish_navigation_task_message(
+            fake_node,
+            goals,
+        )
     )
     goals = (
         DraftGoal(1.0, 4.0, 0.0),
@@ -301,7 +328,16 @@ def test_publish_navigation_task_rejects_invalid_goal_count(goals):
     publisher = PublisherCapture()
     fake_node = SimpleNamespace(
         navigation_task_publisher=publisher,
+        nav_grasp_enable_client=ServiceClientCapture(),
         get_clock=lambda: FakeClock(),
+        get_logger=lambda: LoggerCapture(),
+    )
+    fake_node._publish_navigation_task_message = (
+        lambda goals:
+        SandboxDisplayNode._publish_navigation_task_message(
+            fake_node,
+            goals,
+        )
     )
 
     accepted = SandboxDisplayNode.publish_navigation_task(fake_node, goals)

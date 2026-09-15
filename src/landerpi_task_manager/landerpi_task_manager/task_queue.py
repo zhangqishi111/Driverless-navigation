@@ -132,6 +132,8 @@ class NavigationTaskQueue(Node):
         self._client = ActionClient(self, NavigateToPose, '/navigation_command')
         self.create_subscription(PoseArray, '/navigation_task/goals', self._on_goals, 10)
         self.create_subscription(Empty, '/navigation_task/cancel', self._on_cancel, 10)
+        self.create_subscription(Empty, '/navigation_task/pause', self._on_pause, 10)
+        self.create_subscription(Empty, '/navigation_task/resume', self._on_resume, 10)
         self._amcl_subscription = self.create_subscription(
             PoseWithCovarianceStamped, '/amcl_pose', self._on_amcl_pose, latched)
         self.create_subscription(
@@ -167,6 +169,7 @@ class NavigationTaskQueue(Node):
         self._task_elapsed_time_s = 0.0
         self._last_state_publish_ns: Optional[int] = None
         self._latest_amcl_xy = None
+        self._pause_after_current = False
         self._publish_active(False)
         self._publish_index(0)
         self._publish_status('idle', 'ready')
@@ -322,6 +325,9 @@ class NavigationTaskQueue(Node):
         return None
 
     def _localization_is_healthy(self, now: int) -> bool:
+        if self._state == 'paused':
+            return True
+
         if self._last_localization_ns is None:
             return False
         freshest_ns = self._last_localization_ns
@@ -333,6 +339,7 @@ class NavigationTaskQueue(Node):
         return True
 
     def _on_goals(self, message: PoseArray) -> None:
+        self._pause_after_current = False
         if self._claimed:
             self._reject_submission('another task is still cleaning up')
             return
@@ -561,12 +568,46 @@ class NavigationTaskQueue(Node):
         if self._index + 1 == len(self._goals):
             self._request_terminal('succeeded', 'all goals reached and stopped')
             return
+
+        if self._pause_after_current:
+            self._state = 'paused'
+            self._task_detail = 'current goal reached; waiting for intermediate action'
+            self._publish_status('paused', self._task_detail)
+            self._publish_task_snapshot(now)
+            return
+
         self._index += 1
         self._publish_index(self._index + 1)
         self._state = 'dispatching'
         self._task_detail = 'previous goal reached and stop confirmed'
         self._publish_status('advancing', 'previous goal reached and stop confirmed')
         self._publish_task_snapshot(now)
+        self._send_current_goal()
+
+    def _on_pause(self, _message: Empty) -> None:
+        if not self._claimed:
+            self._publish_status('ignored', 'no active task to pause')
+            return
+        self._pause_after_current = True
+        self._publish_status('pause_requested', 'pause after current goal')
+
+    def _on_resume(self, _message: Empty) -> None:
+        if not self._claimed:
+            self._publish_status('ignored', 'no active task to resume')
+            return
+
+        if self._state != 'paused':
+            self._pause_after_current = False
+            self._publish_status('ignored', 'task is not paused')
+            return
+
+        self._pause_after_current = False
+        self._index += 1
+        self._publish_index(self._index + 1)
+        self._state = 'dispatching'
+        self._task_detail = 'resumed after intermediate action'
+        self._publish_status('advancing', self._task_detail)
+        self._publish_task_snapshot()
         self._send_current_goal()
 
     def _on_cancel(self, _message: Empty) -> None:

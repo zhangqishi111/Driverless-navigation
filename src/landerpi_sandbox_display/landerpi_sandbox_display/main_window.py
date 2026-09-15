@@ -289,6 +289,41 @@ class MainWindow(QMainWindow):
         mode_layout.addWidget(self.multi_goal_mode_button)
         navigation_layout.addWidget(mode_row)
 
+        # Multi-goal task type:
+        # 1. Navigation only
+        # 2. Navigation + grasp
+        task_mode_row = QWidget()
+        task_mode_layout = QHBoxLayout(task_mode_row)
+        task_mode_layout.setContentsMargins(0, 0, 0, 0)
+
+        task_mode_label = QLabel('Task mode')
+        self.navigation_only_task_mode_button = QRadioButton(
+            'Navigation only'
+        )
+        self.navigation_grasp_task_mode_button = QRadioButton(
+            'Navigation + Grasp'
+        )
+
+        self.task_mode_button_group = QButtonGroup(self)
+        self.task_mode_button_group.addButton(
+            self.navigation_only_task_mode_button
+        )
+        self.task_mode_button_group.addButton(
+            self.navigation_grasp_task_mode_button
+        )
+
+        self.navigation_only_task_mode_button.setChecked(True)
+
+        task_mode_layout.addWidget(task_mode_label)
+        task_mode_layout.addWidget(
+            self.navigation_only_task_mode_button
+        )
+        task_mode_layout.addWidget(
+            self.navigation_grasp_task_mode_button
+        )
+
+        navigation_layout.addWidget(task_mode_row)
+
         self.task_summary_value = self._add_value_row(
             navigation_layout,
             'Multi-goal Task',
@@ -343,6 +378,12 @@ class MainWindow(QMainWindow):
 
         self.single_goal_mode_button.toggled.connect(self._on_mode_changed)
         self.multi_goal_mode_button.toggled.connect(self._on_mode_changed)
+        self.navigation_only_task_mode_button.toggled.connect(
+            self._update_task_controls
+        )
+        self.navigation_grasp_task_mode_button.toggled.connect(
+            self._update_task_controls
+        )
         self.undo_task_button.clicked.connect(self.undo_task_goal)
         self.clear_task_button.clicked.connect(self.clear_task_goals)
         self.submit_task_button.clicked.connect(self.submit_navigation_task)
@@ -910,20 +951,53 @@ class MainWindow(QMainWindow):
     def _update_task_controls(self):
         multi_mode = self.multi_goal_mode_button.isChecked()
         editable = multi_mode and not self._task_active
-        self.single_goal_mode_button.setEnabled(not self._task_active)
-        self.multi_goal_mode_button.setEnabled(not self._task_active)
+
+        self.single_goal_mode_button.setEnabled(
+            not self._task_active
+        )
+        self.multi_goal_mode_button.setEnabled(
+            not self._task_active
+        )
+
+        self.navigation_only_task_mode_button.setEnabled(
+            editable
+        )
+        self.navigation_grasp_task_mode_button.setEnabled(
+            editable
+        )
+
         self.undo_task_button.setEnabled(editable)
         self.clear_task_button.setEnabled(editable)
+
+        goals = self.task_draft.goals()
+
+        grasp_mode = (
+            self.navigation_grasp_task_mode_button.isChecked()
+        )
+
+        valid_goal_count = (
+            len(goals) == 3
+            if grasp_mode
+            else bool(goals)
+        )
+
         self.submit_task_button.setEnabled(
-            editable and bool(self.task_draft.goals()))
+            editable and valid_goal_count
+        )
+
         self.cancel_task_button.setEnabled(
-            self._task_active and not self._cancel_pending)
+            self._task_active and not self._cancel_pending
+        )
+
         if self._task_active:
-            self.task_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+            self.task_table.setEditTriggers(
+                QAbstractItemView.NoEditTriggers
+            )
         else:
             self.task_table.setEditTriggers(
                 QAbstractItemView.DoubleClicked |
-                QAbstractItemView.SelectedClicked)
+                QAbstractItemView.SelectedClicked
+            )
 
     def _set_table_item(self, row, column, text, editable=False):
         item = self.task_table.item(row, column)
@@ -1024,20 +1098,55 @@ class MainWindow(QMainWindow):
 
     def submit_navigation_task(self):
         goals = self.task_draft.goals()
-        if self._task_active or not goals or self.task_publish_callback is None:
+
+        if (
+                self._task_active
+                or not goals
+                or self.task_publish_callback is None):
             return
-        if self.task_publish_callback(goals) is False:
+
+        with_grasp = (
+            self.navigation_grasp_task_mode_button.isChecked()
+        )
+
+        if with_grasp and len(goals) != 3:
             self.task_summary_value.setText(
-                'Not submitted · task receiver unavailable')
+                'Not submitted · grasp mode requires 3 points'
+            )
             self.task_summary_value.setToolTip(
-                'No task receiver is connected or the draft is invalid. '
-                'Start navigation_task_queue, then submit again. Draft retained.')
+                'Navigation + Grasp requires exactly three points: '
+                'P1 = grasp point, P2 = place point, P3 = return point.'
+            )
             return
-        self.task_summary_value.setText(
-            'Submitted · waiting for task state')
-        self.task_summary_value.setToolTip(
-            'Waiting for /navigation_task/state from the task queue. '
-            'If this persists, check that display and navigation use matching versions.')
+
+        if self.task_publish_callback(
+                goals,
+                with_grasp,
+        ) is False:
+            self.task_summary_value.setText(
+                'Not submitted · task receiver unavailable'
+            )
+            self.task_summary_value.setToolTip(
+                'Navigation task receiver or grasp coordinator '
+                'is unavailable. Draft retained.'
+            )
+            return
+
+        if with_grasp:
+            self.task_summary_value.setText(
+                'Submitted · Navigation + Grasp'
+            )
+            self.task_summary_value.setToolTip(
+                'P1 = grasp · P2 = place · P3 = return'
+            )
+        else:
+            self.task_summary_value.setText(
+                'Submitted · Navigation only'
+            )
+            self.task_summary_value.setToolTip(
+                'Waiting for /navigation_task/state '
+                'from the task queue.'
+            )
 
     def cancel_navigation_task(self):
         if (not self._task_active or self._cancel_pending or

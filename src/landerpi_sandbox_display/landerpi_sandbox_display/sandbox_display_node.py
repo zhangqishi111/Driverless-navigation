@@ -6,6 +6,7 @@ import rclpy
 
 from nav_msgs.msg import Path
 from std_msgs.msg import Bool, Empty, Float32, String
+from std_srvs.srv import SetBool
 
 from threading import Thread
 
@@ -241,6 +242,11 @@ class SandboxDisplayNode(Node):
             10,
         )
 
+        self.nav_grasp_enable_client = self.create_client(
+            SetBool,
+            '/nav_grasp/enable',
+        )
+
         self._last_map_signature = None
 
         self.get_logger().info(
@@ -275,37 +281,168 @@ class SandboxDisplayNode(Node):
             f'x={x:.3f}, y={y:.3f}, yaw=0.000'
         )
 
-    def publish_navigation_task(self, goals):
-        if self.navigation_task_publisher.get_subscription_count() == 0:
-            self.get_logger().error(
-                'Task not submitted: no subscriber on /navigation_task/goals. '
-                'Start navigation_task_queue from the matching workspace.')
-            return False
-        goals = tuple(goals)
-        if len(goals) < 1 or len(goals) > 3:
-            return False
-        if not all(
-                math.isfinite(value)
-                for goal in goals
-                for value in (goal.x, goal.y, goal.yaw)):
-            return False
-
+    def _publish_navigation_task_message(self, goals):
         message = PoseArray()
         message.header.stamp = self.get_clock().now().to_msg()
         message.header.frame_id = 'map'
+
         for goal in goals:
             pose = Pose()
+
             pose.position.x = float(goal.x)
             pose.position.y = float(goal.y)
             pose.position.z = 0.0
-            quaternion = yaw_to_quaternion(float(goal.yaw))
+
+            quaternion = yaw_to_quaternion(
+                float(goal.yaw)
+            )
+
             pose.orientation.x = quaternion[0]
             pose.orientation.y = quaternion[1]
             pose.orientation.z = quaternion[2]
             pose.orientation.w = quaternion[3]
+
             message.poses.append(pose)
 
         self.navigation_task_publisher.publish(message)
+
+        self.get_logger().info(
+            f'Published navigation task: '
+            f'{len(goals)} point(s)'
+        )
+
+    def _task_mode_response(
+            self,
+            future,
+            goals,
+            with_grasp,
+    ):
+        try:
+            response = future.result()
+        except Exception as exc:
+            self.get_logger().error(
+                f'/nav_grasp/enable failed: {exc}'
+            )
+            return
+
+        if not response.success:
+            self.get_logger().error(
+                '/nav_grasp/enable rejected mode change: '
+                f'{response.message}'
+            )
+            return
+
+        mode_name = (
+            'PICK_AND_PLACE'
+            if with_grasp
+            else 'NORMAL'
+        )
+
+        self.get_logger().info(
+            f'Task mode ready: {mode_name}'
+        )
+
+        self._publish_navigation_task_message(
+            goals
+        )
+
+    def publish_navigation_task(
+            self,
+            goals,
+            with_grasp=False,
+    ):
+        if (
+                self.navigation_task_publisher
+                .get_subscription_count() == 0):
+            self.get_logger().error(
+                'Task not submitted: no subscriber on '
+                '/navigation_task/goals. '
+                'Start navigation_task_queue from '
+                'the matching workspace.'
+            )
+            return False
+
+        goals = tuple(goals)
+
+        if len(goals) < 1 or len(goals) > 3:
+            return False
+
+        if with_grasp and len(goals) != 3:
+            self.get_logger().error(
+                'Navigation + Grasp requires exactly '
+                'three goals: P1 grasp, P2 place, P3 return.'
+            )
+            return False
+
+        if not all(
+                math.isfinite(value)
+                for goal in goals
+                for value in (
+                    goal.x,
+                    goal.y,
+                    goal.yaw,
+                )):
+            return False
+
+        # Navigation + Grasp:
+        # coordinator 必须存在，并且必须成功切换模式后再发布任务。
+        if with_grasp:
+            if not self.nav_grasp_enable_client.service_is_ready():
+                self.get_logger().error(
+                    'Task not submitted: '
+                    '/nav_grasp/enable unavailable.'
+                )
+                return False
+
+            request = SetBool.Request()
+            request.data = True
+
+            future = (
+                self.nav_grasp_enable_client.call_async(
+                    request
+                )
+            )
+
+            future.add_done_callback(
+                lambda result:
+                self._task_mode_response(
+                    result,
+                    goals,
+                    True,
+                )
+            )
+
+            return True
+
+        # Navigation only:
+        # 如果 coordinator 存在，先明确切回 NORMAL，
+        # 防止上一轮 PICK_AND_PLACE 状态残留。
+        if self.nav_grasp_enable_client.service_is_ready():
+            request = SetBool.Request()
+            request.data = False
+
+            future = (
+                self.nav_grasp_enable_client.call_async(
+                    request
+                )
+            )
+
+            future.add_done_callback(
+                lambda result:
+                self._task_mode_response(
+                    result,
+                    goals,
+                    False,
+                )
+            )
+
+            return True
+
+        # 没有抓取协调器时，普通多目标导航仍然可以独立使用。
+        self._publish_navigation_task_message(
+            goals
+        )
+
         return True
 
     def cancel_navigation_task(self):

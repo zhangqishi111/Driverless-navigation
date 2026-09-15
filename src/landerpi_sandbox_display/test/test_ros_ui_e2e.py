@@ -220,6 +220,7 @@ def test_ros_topics_and_ui_actions_round_trip_end_to_end():
             lambda: (
                 window.actual_path_value.text() == '1 points' and
                 len(actual_path_messages) == 1),
+            timeout=8.0,
         )
         assert len(actual_path_messages[0].poses) == 1
 

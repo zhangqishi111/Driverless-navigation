@@ -41,8 +41,17 @@ class MapWidget(QWidget):
         self.robot_pose = None
         self.goal_pose = None
         self.task_markers = []
+        self._panning = False
+        self._last_pan_position = None
 
     def mousePressEvent(self, event):
+        if event.button() == Qt.MiddleButton:
+            self._panning = True
+            self._last_pan_position = event.pos()
+            self.setCursor(Qt.ClosedHandCursor)
+            event.accept()
+            return
+
         if event.button() == Qt.LeftButton:
             self.clicked.emit(
                 float(event.x()),
@@ -50,6 +59,58 @@ class MapWidget(QWidget):
             )
 
         super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._panning and self._last_pan_position is not None:
+            delta = event.pos() - self._last_pan_position
+            self.coordinate_transform.pan_by(
+                delta.x(),
+                delta.y(),
+                self.width(),
+                self.height(),
+            )
+            self._last_pan_position = event.pos()
+            self.update()
+            event.accept()
+            return
+
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MiddleButton and self._panning:
+            self._panning = False
+            self._last_pan_position = None
+            self.unsetCursor()
+            event.accept()
+            return
+
+        super().mouseReleaseEvent(event)
+
+    def wheelEvent(self, event):
+        delta = event.angleDelta().y()
+        if delta == 0:
+            event.ignore()
+            return
+
+        factor = 1.2 ** (delta / 120.0)
+        if self.coordinate_transform.zoom_at(
+                event.x(),
+                event.y(),
+                self.width(),
+                self.height(),
+                factor,
+        ):
+            self.update()
+        event.accept()
+
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.MiddleButton:
+            if self.coordinate_transform.reset_view():
+                self.update()
+            event.accept()
+            return
+
+        super().mouseDoubleClickEvent(event)
 
     def set_map_image(self, image):
         self.map_image = image

@@ -206,3 +206,73 @@ def test_widget_viewport_invalid_map_returns_none():
     )
 
     assert viewport is None
+
+
+def test_zoom_keeps_the_cursor_world_coordinate_stable():
+    transform = create_transform()
+
+    anchor = transform.world_to_widget(
+        x=0.5,
+        y=-0.5,
+        widget_width=800,
+        widget_height=600,
+    )
+
+    assert anchor is not None
+    assert transform.zoom_at(
+        anchor[0],
+        anchor[1],
+        800,
+        600,
+        2.0,
+    )
+
+    world = transform.widget_to_world(
+        anchor[0],
+        anchor[1],
+        800,
+        600,
+    )
+
+    assert world is not None
+    assert abs(world[0] - 0.5) < 1e-6
+    assert abs(world[1] + 0.5) < 1e-6
+
+
+def test_pan_preserves_world_to_widget_round_trip():
+    transform = create_transform()
+
+    assert transform.zoom_at(400, 300, 800, 600, 2.0)
+    assert transform.pan_by(-120, -90, 800, 600)
+
+    widget_position = transform.world_to_widget(
+        1.0,
+        -1.0,
+        800,
+        600,
+    )
+    assert widget_position is not None
+
+    world = transform.widget_to_world(
+        widget_position[0],
+        widget_position[1],
+        800,
+        600,
+    )
+    assert world is not None
+    assert abs(world[0] - 1.0) < 1e-6
+    assert abs(world[1] + 1.0) < 1e-6
+
+
+def test_reset_view_restores_automatic_fit():
+    transform = create_transform()
+    automatic_viewport = transform.widget_viewport(800, 600)
+
+    assert transform.zoom_at(400, 300, 800, 600, 2.0)
+    assert transform.pan_by(-100, -50, 800, 600)
+    assert transform.reset_view()
+
+    assert transform.zoom_multiplier == 1.0
+    assert transform.pan_x == 0.0
+    assert transform.pan_y == 0.0
+    assert transform.widget_viewport(800, 600) == automatic_viewport

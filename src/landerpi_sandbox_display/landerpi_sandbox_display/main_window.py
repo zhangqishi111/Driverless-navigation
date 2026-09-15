@@ -468,7 +468,8 @@ class MainWindow(QMainWindow):
         )
 
         self.map_hint_label = QLabel(
-            'Click map to add goals (max 3)'
+            'Left click: goal (max 3)  ·  Wheel: zoom  ·  '
+            'Middle drag: pan  ·  Middle double-click: fit'
         )
         self.map_hint_label.setObjectName('mapHint')
         map_layout.addWidget(self.map_hint_label)

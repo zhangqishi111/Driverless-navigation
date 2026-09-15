@@ -571,7 +571,7 @@ def test_multi_goal_controls_start_in_single_goal_mode():
     assert not window.goal_x_value.parentWidget().isHidden()
     assert not window.submit_task_button.isEnabled()
     assert not window.cancel_task_button.isEnabled()
-    assert window.task_table.rowCount() == 3
+    assert window.task_table.rowCount() == 0
 
     window.close()
 
@@ -597,8 +597,11 @@ def test_multi_goal_mode_collects_three_ordered_clicks_without_single_publish():
     window.multi_goal_mode_button.setChecked(True)
 
     click_world(window, 1.0, 1.0)
+    assert window.task_table.rowCount() == 1
     click_world(window, 2.0, 1.0)
+    assert window.task_table.rowCount() == 2
     click_world(window, 2.0, 3.0)
+    assert window.task_table.rowCount() == 3
     click_world(window, 4.0, 4.0)
 
     assert [(goal.x, goal.y) for goal in window.task_draft.goals()] == [

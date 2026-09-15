@@ -106,6 +106,7 @@ class NavigationTaskQueue(Node):
         self.declare_parameter('stop_settle_duration', 0.50)
         self.declare_parameter('stop_timeout', 3.0)
         self.declare_parameter('stop_velocity_freshness', 0.25)
+        self.declare_parameter('waypoint_dwell_duration', 3.0)
 
         self._max_goals = int(self.get_parameter('max_goals').value)
         self._localization_timeout_ns = self._ns('localization_timeout')
@@ -117,6 +118,7 @@ class NavigationTaskQueue(Node):
         self._stop_settle_ns = self._ns('stop_settle_duration')
         self._stop_timeout_ns = self._ns('stop_timeout')
         self._stop_velocity_freshness_ns = self._ns('stop_velocity_freshness')
+        self._waypoint_dwell_ns = self._ns('waypoint_dwell_duration')
 
         latched = QoSProfile(
             depth=1,
@@ -159,6 +161,7 @@ class NavigationTaskQueue(Node):
         self._stop_started_ns: Optional[int] = None
         self._last_velocity_ns: Optional[int] = None
         self._zero_since_ns: Optional[int] = None
+        self._dwell_until_ns: Optional[int] = None
         self._terminal_state: Optional[str] = None
         self._terminal_reason: Optional[str] = None
         self._terminal_point = 0
@@ -534,6 +537,10 @@ class NavigationTaskQueue(Node):
         if not self._localization_is_healthy(now):
             self._request_terminal('failed', self._localization_error)
             return
+        if self._state == 'dwelling':
+            if self._dwell_until_ns is not None and now >= self._dwell_until_ns:
+                self._dispatch_next_goal(now)
+            return
         if self._state != 'waiting_for_stop':
             return
         if now - self._stop_started_ns > self._stop_timeout_ns:
@@ -568,19 +575,33 @@ class NavigationTaskQueue(Node):
         if self._index + 1 == len(self._goals):
             self._request_terminal('succeeded', 'all goals reached and stopped')
             return
-
         if self._pause_after_current:
             self._state = 'paused'
             self._task_detail = 'current goal reached; waiting for intermediate action'
             self._publish_status('paused', self._task_detail)
             self._publish_task_snapshot(now)
             return
+        if self._waypoint_dwell_ns > 0:
+            self._state = 'dwelling'
+            self._dwell_until_ns = now + self._waypoint_dwell_ns
+            dwell_seconds = self._waypoint_dwell_ns / 1e9
+            detail = f'waypoint reached; dwelling for {dwell_seconds:.1f} s'
+            self._task_detail = detail
+            self._publish_status('dwelling', detail)
+            self._publish_task_snapshot(now)
+            return
+        self._dispatch_next_goal(now)
 
+    def _dispatch_next_goal(self, now: Optional[int] = None) -> None:
+        if now is None:
+            now = self._now()
+        self._dwell_until_ns = None
         self._index += 1
         self._publish_index(self._index + 1)
         self._state = 'dispatching'
-        self._task_detail = 'previous goal reached and stop confirmed'
-        self._publish_status('advancing', 'previous goal reached and stop confirmed')
+        self._task_detail = 'waypoint dwell complete; dispatching next goal'
+        self._publish_status(
+            'advancing', 'waypoint dwell complete; dispatching next goal')
         self._publish_task_snapshot(now)
         self._send_current_goal()
 

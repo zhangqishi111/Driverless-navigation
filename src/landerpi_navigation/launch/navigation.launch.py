@@ -31,6 +31,8 @@ def generate_launch_description():
     task_stop_velocity_topic = LaunchConfiguration('task_stop_velocity_topic')
     task_max_position_variance = LaunchConfiguration(
         'task_max_position_variance')
+    task_waypoint_dwell_duration = LaunchConfiguration(
+        'task_waypoint_dwell_duration')
 
     nav2 = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -70,6 +72,9 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'task_max_position_variance', default_value='0.50',
             description='Maximum AMCL position variance accepted for a task.'),
+        DeclareLaunchArgument(
+            'task_waypoint_dwell_duration', default_value='3.0',
+            description='Seconds to remain stopped between task waypoints.'),
         nav2,
         Node(
             package='landerpi_task_manager',
@@ -101,6 +106,7 @@ def generate_launch_description():
                 'use_sim_time': use_sim_time,
                 'stop_velocity_topic': task_stop_velocity_topic,
                 'max_position_variance': task_max_position_variance,
+                'waypoint_dwell_duration': task_waypoint_dwell_duration,
             }],
         ),
     ])

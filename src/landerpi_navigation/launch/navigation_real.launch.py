@@ -38,6 +38,8 @@ def generate_launch_description():
                 'task_stop_velocity_topic': '/controller/cmd_vel',
                 # Keep the stricter localization gate on physical hardware.
                 'task_max_position_variance': '0.25',
+                # Pause visibly after each intermediate waypoint.
+                'task_waypoint_dwell_duration': '3.0',
             }.items(),
         ),
     ])

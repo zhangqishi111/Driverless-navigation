@@ -279,7 +279,28 @@ def test_stop_confirmation_records_error_before_advancing(queue):
     assert completed.state == NavigationPointState.SUCCEEDED
     assert math.isclose(completed.arrival_error_m, 0.05)
     assert completed.elapsed_time_s == 2.0
+    assert queue._index == 0
+    assert queue._state == 'dwelling'
+
+
+def test_dwell_dispatches_next_goal_only_after_deadline(queue):
+    queue._on_goals(make_goal_array(2))
+    queue._records[0].start(8_000_000_000)
+    queue._latest_amcl_xy = (1.0, 2.0)
+    queue._advance_or_finish()
+
+    deadline = queue._dwell_until_ns
+    queue._now = lambda: deadline - 1
+    queue._last_localization_ns = deadline - 1
+    queue._monitor()
+    assert queue._index == 0
+    assert queue._state == 'dwelling'
+
+    queue._now = lambda: deadline
+    queue._last_localization_ns = deadline
+    queue._monitor()
     assert queue._index == 1
+    assert queue._state == 'dispatching'
 
 
 def test_invalid_submission_publishes_a_structured_rejection(queue):
@@ -342,7 +363,8 @@ def test_monitor_advances_only_after_fresh_continuous_zero_velocity(queue):
     queue._monitor()
 
     assert queue._records[0].state == NavigationPointState.SUCCEEDED
-    assert queue._index == 1
+    assert queue._index == 0
+    assert queue._state == 'dwelling'
 
 
 def test_monitor_accepts_latched_zero_command_during_settle(queue):
@@ -353,7 +375,8 @@ def test_monitor_accepts_latched_zero_command_during_settle(queue):
     queue._monitor()
 
     assert queue._records[0].state == NavigationPointState.SUCCEEDED
-    assert queue._index == 1
+    assert queue._index == 0
+    assert queue._state == 'dwelling'
 
 
 def test_localization_loss_fails_current_point_and_stops_later_goals(queue):
